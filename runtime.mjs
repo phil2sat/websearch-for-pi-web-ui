@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { exec, execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { existsSync, mkdirSync } from "node:fs";
@@ -8,10 +8,12 @@ import { createConnection, isIP } from "node:net";
 import { lookup } from "node:dns/promises";
 
 const execFileAsync = promisify(execFile);
+const execAsync = promisify(exec);
 const PLUGIN_DIR = fileURLToPath(new URL(".", import.meta.url));
 const BOOTSTRAP_PATH = join(PLUGIN_DIR, "browser-bootstrap.py");
 const DEFAULT_BROWSER_PORT = 9333;
 const DEFAULT_BROWSER_TIMEOUT_MS = 60000;
+const DEFAULT_IDLE_MINUTES = 15;
 
 const ENGINES = {
   google: (query) => `https://www.google.com/search?q=${encodeURIComponent(query)}`,
@@ -50,18 +52,72 @@ function resolvePython() {
   return isWindows ? "python.exe" : "python3";
 }
 
-async function runBrowserScript(action, profileDir) {
-  const env = { ...process.env, DP_BROWSER_PORT: String(DEFAULT_BROWSER_PORT), DP_USER_DATA: profileDir, DP_HEADLESS: "1", PYTHONIOENCODING: "utf-8" };
-  const { stdout, stderr } = await execFileAsync(resolvePython(), [BOOTSTRAP_PATH, action], {
-    env, timeout: 180000, windowsHide: true, maxBuffer: 2 * 1024 * 1024, encoding: "utf8"
+function decode(buf) {
+  const bytes = Buffer.isBuffer(buf) ? buf : Buffer.from(String(buf ?? ""));
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    try {
+      return new TextDecoder("gbk").decode(bytes);
+    } catch {
+      return bytes.toString("latin1");
+    }
+  }
+}
+
+function runPythonScript(pyExecutable, scriptArgs, { env = {}, timeout = DEFAULT_BROWSER_TIMEOUT_MS, signal } = {}) {
+  return new Promise((resolve, reject) => {
+    const childEnv = {
+      ...process.env,
+      PYTHONIOENCODING: "utf-8",
+      ...env,
+    };
+    execFile(
+      pyExecutable,
+      [BOOTSTRAP_PATH, ...scriptArgs],
+      {
+        encoding: "buffer",
+        timeout,
+        windowsHide: true,
+        signal,
+        env: childEnv,
+        maxBuffer: 10 * 1024 * 1024,
+      },
+      (err, stdout, stderr) => {
+        const stdoutText = decode(stdout).trim();
+        const stderrText = decode(stderr).trim();
+        if (err) {
+          if (stdoutText.startsWith("{")) {
+            try {
+              const parsed = JSON.parse(stdoutText);
+              if (!parsed.ok) {
+                resolve(parsed);
+                return;
+              }
+            } catch {}
+          }
+          const tail = stderrText ? ` (${stderrText.slice(-300)})` : "";
+          reject(new Error(`browser_use runtime failed: ${err.message}${tail}`));
+          return;
+        }
+        if (!stdoutText) {
+          if (stderrText) {
+            reject(new Error(`browser_use runtime returned no output: ${stderrText.slice(-300)}`));
+          } else {
+            resolve({ ok: true });
+          }
+          return;
+        }
+        const startIdx = stdoutText.lastIndexOf("\\n{");
+        const jsonCandidate = startIdx >= 0 ? stdoutText.slice(startIdx + 1) : stdoutText;
+        try {
+          resolve(JSON.parse(jsonCandidate));
+        } catch {
+          resolve({ ok: true, raw: stdoutText });
+        }
+      },
+    );
   });
-  const output = String(stdout || "").trim();
-  if (!output) throw new Error("Chromium bootstrap returned no output. " + String(stderr || "").slice(-1200));
-  let result;
-  try { result = JSON.parse(output.split(/\r?\n/).filter(Boolean).at(-1)); }
-  catch { throw new Error("Invalid Chromium bootstrap response: " + output.slice(-1200)); }
-  if (!result?.ok) throw new Error(result?.error || "DrissionPage could not start Chromium.");
-  return { result, diagnostic: String(stderr || "").slice(-2000) };
 }
 
 async function waitForBrowser() {
@@ -95,6 +151,30 @@ function checkPortAlive(port = DEFAULT_BROWSER_PORT, timeoutMs = 1500) {
   });
 }
 
+async function forceKillPort(port = DEFAULT_BROWSER_PORT) {
+  const portStr = String(port ?? "");
+  if (!/^\\d{1,5}$/.test(portStr)) return;
+  const portNum = Number(portStr);
+  if (portNum < 1 || portNum > 65535) return;
+  port = portNum;
+  try {
+    if (process.platform === "win32") {
+      const { stdout } = await execAsync(`netstat -ano | findstr :${port}`);
+      const lines = stdout.split(/\\r?\\n/).filter((line) => line.includes(`:${port}`) && line.includes("LISTENING"));
+      for (const line of lines) {
+        const parts = line.trim().split(/\\s+/);
+        const pid = parts[parts.length - 1];
+        if (pid && /^\\d+$/.test(pid) && pid !== "0" && pid !== String(process.pid)) {
+          try {
+            await execAsync(`taskkill /F /PID ${pid}`);
+          } catch {}
+        }
+      }
+    } else {
+      await execAsync(`fuser -k -n tcp ${port} 2>/dev/null || lsof -ti :${port} | xargs kill -9 2>/dev/null || true`);
+    }
+  } catch {}
+}
 function isPrivateAddress(hostname) {
   const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
   if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal")) return true;
@@ -294,82 +374,168 @@ function readableExpression() {
 
 export default {
   activate(host) {
-    let settings = {};
-    const readSettings = () => {
-      try {
-        settings = host.getSettings?.() ?? {};
-      } catch {
-        settings = {};
-      }
-    };
-    readSettings();
-    host.onSettingsChanged?.(readSettings);
-
     const profileDir = join(host.dataDir || homedir(), "browser-use-chrome-data");
     mkdirSync(profileDir, { recursive: true });
 
-    let cdpPort = DEFAULT_BROWSER_PORT;
-    let browserStarted = false;
-    let stderrTail = "";
+    let browserActive = false;
+    let lastActivityTime = Date.now();
+    let idleTimer = null;
+    let idleTimeoutMinutes = DEFAULT_IDLE_MINUTES;
+    let headlessMode = true;
+    let bgTaskHandle = null;
     let starting = null;
     let disposed = false;
-    let bgTaskHandle = null;
+    let stderrTail = "";
+
+    try {
+      const stored = host.storage?.get?.("settings");
+      if (typeof stored?.idleTimeoutMinutes === "number") {
+        idleTimeoutMinutes = Math.max(0, Math.floor(stored.idleTimeoutMinutes));
+      }
+      if (typeof stored?.headless === "boolean") {
+        headlessMode = stored.headless;
+      }
+    } catch {}
+
+    function buildBrowserEnv() {
+      return {
+        DP_BROWSER_PORT: String(DEFAULT_BROWSER_PORT),
+        DP_USER_DATA: profileDir,
+        DP_HEADLESS: headlessMode ? "1" : "0",
+      };
+    }
+
+    function stopIdleTimer() {
+      if (idleTimer) {
+        clearTimeout(idleTimer);
+        idleTimer = null;
+      }
+    }
 
     function syncBackgroundTask() {
-      const label = "Chromium Web Search (headless)";
-      const status = "Port " + DEFAULT_BROWSER_PORT + " · Running";
+      const labelText = `🌐 常驻 Chrome (${headlessMode ? "无头静默" : "实体窗口"})`;
+      const statusText = `端口 ${DEFAULT_BROWSER_PORT} · 运行中`;
       if (!bgTaskHandle) {
         bgTaskHandle = host.registerBackgroundTask?.({
-          id: "websearch-chromium",
-          label,
-          status,
+          id: "browser-instance",
+          label: labelText,
+          status: statusText,
           intervalMs: 3000,
           maxFailures: 2,
-          check: async () => checkPortAlive(DEFAULT_BROWSER_PORT),
+          check: async () => {
+            return await checkPortAlive(DEFAULT_BROWSER_PORT);
+          },
           onDead: () => {
-            browserStarted = false;
+            browserActive = false;
+            stopIdleTimer();
             bgTaskHandle = null;
-            host.log?.("warn", "Web Search Chromium is no longer reachable; background task removed.");
+            host.log?.("info", "[browser-use] 检测到常驻 Chrome 已关闭，已自动移除后台任务记录。");
           },
           stop: async () => {
-            await stopBrowser();
-          }
+            await quitBrowser();
+          },
         });
       } else {
-        bgTaskHandle.update?.({ label, status });
+        bgTaskHandle.update?.({
+          label: labelText,
+          status: statusText,
+        });
       }
     }
 
     function removeBackgroundTask() {
-      try { bgTaskHandle?.unregister?.(); } catch {}
-      bgTaskHandle = null;
-    }
-
-    async function stopBrowser() {
-      removeBackgroundTask();
-      if (!browserStarted) return;
-      try {
-        await runBrowserScript("quit", profileDir);
-      } finally {
-        browserStarted = false;
+      if (bgTaskHandle) {
+        bgTaskHandle.unregister?.();
+        bgTaskHandle = null;
       }
     }
+
+    async function quitBrowser() {
+      browserActive = false;
+      stopIdleTimer();
+      removeBackgroundTask();
+      try {
+        const py = resolvePython();
+        const env = buildBrowserEnv();
+        await runPythonScript(py, ["quit"], { env, timeout: 5000 });
+      } catch {}
+
+      const stillAlive = await checkPortAlive(DEFAULT_BROWSER_PORT, 600);
+      if (stillAlive) {
+        await forceKillPort(DEFAULT_BROWSER_PORT);
+      }
+    }
+
+    async function closeBrowserDueToIdle() {
+      if (!browserActive) return;
+      await quitBrowser();
+      host.log?.("info", `[browser-use] 浏览器闲闲置已达 ${idleTimeoutMinutes} 分钟，已自动关闭以释放内存。`);
+    }
+
+    function armIdleTimer() {
+      stopIdleTimer();
+      if (idleTimeoutMinutes <= 0 || !browserActive) {
+        return;
+      }
+      const timeoutMs = idleTimeoutMinutes * 60 * 1000;
+      const elapsed = Date.now() - lastActivityTime;
+      const remaining = Math.max(1000, timeoutMs - elapsed);
+
+      idleTimer = setTimeout(async () => {
+        const now = Date.now();
+        if (now - lastActivityTime >= timeoutMs) {
+          await closeBrowserDueToIdle();
+        } else {
+          armIdleTimer();
+        }
+      }, remaining);
+
+      if (typeof idleTimer?.unref === "function") {
+        idleTimer.unref();
+      }
+    }
+
+    function recordActivity() {
+      browserActive = true;
+      lastActivityTime = Date.now();
+      armIdleTimer();
+      syncBackgroundTask();
+    }
+
+    const offSettings = host.onSettingsChanged?.((values) => {
+      if (values) {
+        if (typeof values.idleTimeoutMinutes === "number") {
+          idleTimeoutMinutes = Math.max(0, Math.floor(values.idleTimeoutMinutes));
+          armIdleTimer();
+        }
+        if (typeof values.headless === "boolean" && values.headless !== headlessMode) {
+          headlessMode = values.headless;
+          if (browserActive) {
+            quitBrowser().catch(() => {});
+          }
+        }
+      }
+    });
 
     async function startBrowser() {
       if (disposed) throw new Error("The websearch plugin is deactivated.");
       if (starting) return starting;
       starting = (async () => {
-        mkdirSync(profileDir, { recursive: true });
-        const { diagnostic } = await runBrowserScript("start", profileDir);
-        stderrTail = diagnostic;
+        const py = resolvePython();
+        const env = buildBrowserEnv();
+        const response = await runPythonScript(py, ["start"], { env });
+        if (!response?.ok) {
+          throw new Error(response?.error || "DrissionPage could not start Chromium.");
+        }
         await waitForBrowser();
-        cdpPort = DEFAULT_BROWSER_PORT;
-        browserStarted = true;
-        syncBackgroundTask();
+        recordActivity();
       })();
-      try { await starting; } finally { starting = null; }
+      try {
+        await starting;
+      } finally {
+        starting = null;
+      }
     }
-
     async function withPage(url, operation) {
       await startBrowser();
       const response = await fetch(`http://127.0.0.1:${cdpPort}/json/new?${encodeURIComponent(url)}`, { method: "PUT" });
@@ -409,7 +575,9 @@ export default {
         }
         if (!ready) await delay(1000);
         await delay(700);
-        return await operation(cdp);
+        const result = await operation(cdp);
+        recordActivity();
+        return result;
       } finally {
         cdp.close();
         try {
@@ -509,10 +677,9 @@ export default {
       async execute() {
         try {
           await startBrowser();
-          const running = await checkPortAlive(cdpPort);
+          const running = await checkPortAlive(DEFAULT_BROWSER_PORT);
           if (!running) throw new Error("Chromium CDP port is not accepting connections.");
-          syncBackgroundTask();
-          return { ok: true, running: true, browser: "DrissionPage Chromium", cdpPort, profileDir, headless: true };
+          return { ok: true, running: true, browser: "DrissionPage Chromium", cdpPort: DEFAULT_BROWSER_PORT, profileDir, headless: headlessMode };
         } catch (error) {
           return { ok: false, running: false, error: String(error?.message ?? error), profileDir };
         }
@@ -527,9 +694,9 @@ export default {
           unregister?.();
         } catch {}
       }
-      try { await stopBrowser(); }
+      try { await quitBrowser(); }
       catch (error) { host.log?.("warn", "Chromium shutdown failed: " + String(error?.message ?? error)); }
-      cdpPort = DEFAULT_BROWSER_PORT;
+      try { offSettings?.(); } catch {}
     };
   }
 };
