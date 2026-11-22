@@ -85,7 +85,7 @@ export default {
       } catch {}
       await Promise.race([
         new Promise((resolve) => oldChild.once("exit", resolve)),
-        new Promise((resolve) => setTimeout(resolve, 2500))
+        new Promise((resolve) => setTimeout(resolve, 5000))
       ]);
       if (oldChild.exitCode === null) {
         try {
