@@ -24,7 +24,7 @@ const ENGINE_GUIDANCE = [
   "If an engine presents CAPTCHA, unusual-traffic, or bot-verification content, report the block; do not claim that no results exist.",
   "Use read_url to inspect promising result pages. Preserve the returned URLs as source references.",
   "Result URLs pointing to google.*/goto are Google redirect links: pass them unchanged to read_url, which resolves them to the real page. Name the source by the site shown after the title.",
-  "The search_web output mode is controlled by the plugin setting Debug output. When disabled, present only title, original result URL, and page description/snippet. When enabled, reproduce the complete JSON returned by search_web verbatim as the final answer. Do not summarize, convert it to plain text, omit fields, or reformat it.",
+  "The search_web output mode is controlled by the plugin setting JSON output. When disabled, present the plain-text generator output. When enabled, reproduce the JSON generator output verbatim. Do not summarize, convert between formats, omit fields, or reformat the output.",
 ];
 
 const MAX_TEXT = 18000;
@@ -96,7 +96,8 @@ function runPythonScript(pyExecutable, scriptArgs, { env = {}, timeout = DEFAULT
         maxBuffer: 10 * 1024 * 1024,
       },
       (err, stdout, stderr) => {
-        const stdoutText = decode(stdout).trim();
+        const stdoutDecoded = decode(stdout);
+        const stdoutText = rawOutput ? stdoutDecoded : stdoutDecoded.trim();
         const stderrText = decode(stderr).trim();
         if (err) {
           if (rawOutput && stdoutText) {
@@ -431,8 +432,8 @@ export default {
     const offSearch = host.registerAgentTool({
       name: "search_web",
       label: "Web Search",
-      description: "Search the public web using locally managed headless Chromium. Google is the default. Select Baidu or Sogou for Chinese-language sources, Naver for Korean, Yahoo Japan for Japanese, and Yandex for Russian. Debug output OFF: returns plain-text titles, original URLs, and snippets. Debug output ON: the Python search backend generates and returns raw JSON diagnostics directly from the search and parser data. Debug output OFF: the Python backend generates formatted plain-text results. No search API is used.",
-      promptSnippet: "Search the public web through local headless Chromium. Follow the plugin Debug output setting exactly: OFF selects the Python plain-text generation path; ON selects the separate Python JSON diagnostics generation path. Never convert one output mode into the other.",
+      description: "Search the public web using locally managed headless Chromium. Google is the default. Select Baidu or Sogou for Chinese-language sources, Naver for Korean, Yahoo Japan for Japanese, and Yandex for Russian. JSON output OFF selects the independent plain-text generator from version 0.1.35. JSON output ON selects the independent JSON generator from version 0.1.33. Both generator outputs are returned unchanged. No search API is used.",
+      promptSnippet: "Search the public web through local headless Chromium. Follow the plugin JSON output setting exactly: OFF selects the version 0.1.35 plain-text generator; ON selects the version 0.1.33 JSON generator. Return the selected generator output unchanged. Never convert one output mode into the other.",
       promptGuidelines: ENGINE_GUIDANCE,
       parameters: {
         type: "object",
