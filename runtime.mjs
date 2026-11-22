@@ -609,7 +609,7 @@ export default {
           returnByValue: true
         });
         const finalPageState = finalState.result?.value ?? pageState;
-        if (!/^https?:\\/\\//i.test(finalPageState.href)) {
+        if (!/^https?:\/\//i.test(finalPageState.href)) {
           throw new Error("Chromium did not reach an HTTP(S) page. Navigation state: " + JSON.stringify(finalPageState));
         }
 
