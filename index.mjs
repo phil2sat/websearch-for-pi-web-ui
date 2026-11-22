@@ -135,6 +135,9 @@ export default {
         });
         activeChild.once("exit", (code, signal) => {
           if (child === activeChild) child = null;
+          for (const unregister of registered) {
+            try { unregister?.(); } catch {}
+          }
           registered = [];
           rejectPending(new Error(`The websearch MCP process exited (code=${code}, signal=${signal}).`));
         });
