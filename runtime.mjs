@@ -377,6 +377,7 @@ export default {
     const profileDir = join(host.dataDir || homedir(), "browser-use-chrome-data");
     mkdirSync(profileDir, { recursive: true });
 
+    const cdpPort = DEFAULT_BROWSER_PORT;
     let browserActive = false;
     let lastActivityTime = Date.now();
     let idleTimer = null;
@@ -469,7 +470,7 @@ export default {
     async function closeBrowserDueToIdle() {
       if (!browserActive) return;
       await quitBrowser();
-      host.log?.("info", `[browser-use] 浏览器闲闲置已达 ${idleTimeoutMinutes} 分钟，已自动关闭以释放内存。`);
+      host.log?.("info", `[browser-use] 浏览器闲置已达 ${idleTimeoutMinutes} 分钟，已自动关闭以释放内存。`);
     }
 
     function armIdleTimer() {
