@@ -336,18 +336,19 @@ function extractorExpression(engine) {
       found.push({ title, url, snippet: snippet.slice(0, 700) });
     };
     const selectors = {
-      google: ["div.MjjYud", "div.g"],
-      bing: ["li.b_algo"],
-      duckduckgo: [".result"],
-      baidu: ["div.result", "div.c-container"],
-      sogou: ["div.vrwrap", "div.rb"],
+      google: ["#search .g", "div.g:not(.g-blk)", "#rso > div.MjjYud"],
+      bing: ["#b_results > li.b_algo", "li.b_algo"],
+      duckduckgo: [".results .result", ".result"],
+      baidu: ["#content_left .result.c-container", "#content_left .c-container"],
+      sogou: [".results .vrwrap", ".results .rb", ".vrwrap", ".rb"],
       yandex: ["li.serp-item"],
       naver: ["div.total_wrap", "li.bx"],
       yahoo_japan: ["div.sw-Card", "div.algo"]
     };
     for (const selector of selectors[engine] || []) {
       for (const card of document.querySelectorAll(selector)) {
-        const anchor = card.querySelector("h2 a, h3 a, a.result__a, a[data-testid='result-title-a'], a[href]");
+        if (/google/i.test(engine) && card.closest("#tads, #tadsb, [data-text-ad]")) continue;
+        const anchor = card.querySelector("h2 a, h3 a, a.result__a, a[data-testid='result-title-a'], a[href^='http']");
         add(anchor, card);
       }
     }
@@ -545,19 +546,6 @@ export default {
       try {
         await cdp.command("Page.enable");
         await cdp.command("Runtime.enable");
-        cdp.on("Fetch.requestPaused", (event) => {
-          void (async () => {
-            const safe = await isPublicNetworkUrl(event.request?.url);
-            if (safe) {
-              await cdp.command("Fetch.continueRequest", { requestId: event.requestId });
-            } else {
-              await cdp.command("Fetch.failRequest", { requestId: event.requestId, errorReason: "BlockedByClient" });
-            }
-          })().catch(() => {
-            void cdp.command("Fetch.failRequest", { requestId: event.requestId, errorReason: "BlockedByClient" }).catch(() => {});
-          });
-        });
-        await cdp.command("Fetch.enable", { patterns: [{ urlPattern: "*", requestStage: "Request" }] });
         let loadEventReceived = false;
         let resolveLoadEvent;
         const loadEvent = new Promise((resolve) => {
@@ -652,25 +640,53 @@ export default {
       async execute(_toolCallId, params, signal) {
         const query = String(params.query ?? "").trim();
         if (!query) return { ok: false, error: "query is required" };
-        const engine = String(params.engine ?? "google").toLowerCase();
+        const engine = String(params.engine ?? "bing").toLowerCase();
         if (!ENGINES[engine]) return { ok: false, error: `Unsupported engine: ${engine}`, engines: Object.keys(ENGINES) };
         const limit = Math.min(20, Math.max(1, Number(params.limit) || 10));
         try {
           if (signal?.aborted) throw new Error("Search cancelled.");
-          const data = await withPage(ENGINES[engine](query), (cdp) => evaluate(cdp, extractorExpression(engine)));
-          if (data?.blocked) {
-            return {
-              ok: false,
-              blocked: true,
-              engine,
-              query,
-              message: "The search engine presented a CAPTCHA or bot-verification page. No search results were extracted."
-            };
+          const candidates = [engine, ...["bing", "google", "duckduckgo", "yandex", "baidu", "sogou", "naver", "yahoo_japan"].filter((name) => name !== engine)];
+          const attempts = [];
+          for (const candidate of candidates) {
+            let data;
+            try {
+              data = await withPage(ENGINES[candidate](query), (cdp) => evaluate(cdp, extractorExpression(candidate)));
+            } catch (error) {
+              attempts.push({ engine: candidate, kind: "error", reason: String(error?.message ?? error) });
+              continue;
+            }
+            if (data?.blocked) {
+              attempts.push({ engine: candidate, kind: "blocked", reason: "Search engine returned a CAPTCHA or bot-verification page." });
+              continue;
+            }
+            const results = Array.isArray(data?.results) ? data.results.slice(0, limit) : [];
+            if (results.length > 0) {
+              return {
+                ok: true,
+                engine: candidate,
+                requestedEngine: engine,
+                query,
+                pageTitle: data?.title ?? "",
+                resultCount: results.length,
+                results: results.map((item, index) => ({ rank: index + 1, ...item })),
+                attempts
+              };
+            }
+            attempts.push({
+              engine: candidate,
+              kind: data?.empty ? "empty" : "parse_miss",
+              reason: data?.title ? "Page loaded but no result cards were extracted." : "No searchable page content was detected."
+            });
           }
-          const results = Array.isArray(data?.results)
-            ? data.results.slice(0, limit).map((item, index) => ({ rank: index + 1, ...item }))
-            : [];
-          return { ok: true, engine, query, pageTitle: data?.title ?? "", resultCount: results.length, results };
+          return {
+            ok: false,
+            engine,
+            query,
+            resultCount: 0,
+            results: [],
+            attempts,
+            error: "All configured search engines returned no extractable results. See attempts for per-engine diagnostics."
+          };
         } catch (error) {
           return { ok: false, engine, query, error: String(error?.message ?? error), diagnostic: stderrTail.slice(-1000) };
         }
