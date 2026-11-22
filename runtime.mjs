@@ -667,12 +667,21 @@ export default {
         try {
           const url = validatePublicUrl(params.url);
           if (signal?.aborted) throw new Error("Page read cancelled.");
-          const data = await withPage(url, (cdp) => evaluate(cdp, readableExpression()));
+          const py = resolvePython();
+          const maxChars = Math.min(MAX_TEXT, Math.max(1000, Number(params.maxChars) || MAX_TEXT));
+          const env = buildBrowserEnv();
+          const response = await runPythonScript(py, ["read_page", url, String(maxChars)], {
+            env,
+            signal,
+            scriptPath: BROWSER_USE_SCRIPT_PATH
+          });
+          if (!response?.ok) return response;
+          recordActivity();
           return {
             ok: true,
-            title: data?.title ?? "",
-            url: data?.url ?? url,
-            text: clip(data?.text ?? "", Math.min(MAX_TEXT, Math.max(1000, Number(params.maxChars) || MAX_TEXT)))
+            title: response.title ?? "",
+            url: response.url ?? url,
+            text: clip(response.content ?? "", maxChars)
           };
         } catch (error) {
           return { ok: false, error: String(error?.message ?? error) };
