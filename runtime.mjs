@@ -7,7 +7,6 @@ import { join } from "node:path";
 import { createConnection, isIP } from "node:net";
 import { lookup } from "node:dns/promises";
 
-const execFileAsync = promisify(execFile);
 const execAsync = promisify(exec);
 const PLUGIN_DIR = fileURLToPath(new URL(".", import.meta.url));
 const BOOTSTRAP_PATH = join(PLUGIN_DIR, "browser-bootstrap.py");
@@ -108,7 +107,7 @@ function runPythonScript(pyExecutable, scriptArgs, { env = {}, timeout = DEFAULT
           }
           return;
         }
-        const startIdx = stdoutText.lastIndexOf("\\n{");
+        const startIdx = stdoutText.lastIndexOf("\n{");
         const jsonCandidate = startIdx >= 0 ? stdoutText.slice(startIdx + 1) : stdoutText;
         try {
           resolve(JSON.parse(jsonCandidate));
@@ -153,18 +152,18 @@ function checkPortAlive(port = DEFAULT_BROWSER_PORT, timeoutMs = 1500) {
 
 async function forceKillPort(port = DEFAULT_BROWSER_PORT) {
   const portStr = String(port ?? "");
-  if (!/^\\d{1,5}$/.test(portStr)) return;
+  if (!/^\d{1,5}$/.test(portStr)) return;
   const portNum = Number(portStr);
   if (portNum < 1 || portNum > 65535) return;
   port = portNum;
   try {
     if (process.platform === "win32") {
       const { stdout } = await execAsync(`netstat -ano | findstr :${port}`);
-      const lines = stdout.split(/\\r?\\n/).filter((line) => line.includes(`:${port}`) && line.includes("LISTENING"));
+      const lines = stdout.split(/\r?\n/).filter((line) => line.includes(`:${port}`) && line.includes("LISTENING"));
       for (const line of lines) {
-        const parts = line.trim().split(/\\s+/);
+        const parts = line.trim().split(/\s+/);
         const pid = parts[parts.length - 1];
-        if (pid && /^\\d+$/.test(pid) && pid !== "0" && pid !== String(process.pid)) {
+        if (pid && /^\d+$/.test(pid) && pid !== "0" && pid !== String(process.pid)) {
           try {
             await execAsync(`taskkill /F /PID ${pid}`);
           } catch {}
