@@ -81,7 +81,7 @@ const candidates = nodes.map((element) => {
   const label = String(
     element.innerText || element.textContent || element.value ||
     element.getAttribute('aria-label') || element.getAttribute('title') || ''
-  ).replace(/\\s+/g, ' ').trim();
+  ).replace(/\s+/g, ' ').trim();
   return { element, label, id: element.id || null, disabled: !!element.disabled };
 });
 const target = candidates.find((item) =>
