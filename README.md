@@ -29,7 +29,7 @@ Alternatively, clone it into `<dataDir>/plugins/websearch` and reload plugins.
 Searches only the selected engine. Google is the default; blocked or empty results are reported without silently switching engines. The **Debug output** plugin setting selects one of two independent search generators:
 
 - **Off — version 0.1.35 generator:** the Python backend writes numbered titles, original result URLs, and page descriptions/snippets as plain text. This path uses the original 0.1.35 formatting and does not emit a JSON wrapper.
-- **On — version 0.1.29 generator:** the Python backend emits the original structured JSON payload, including `formatted_results`, engine metadata, fallback information, time range, page, result count, instant answer, related queries, extracted top content, result objects, and parser attempts. The original URL-resolution diagnostics are retained.
+- **On — version 0.1.28-style debug output:** the Python backend emits the original structured JSON payload, pretty-printed with two-space indentation. It includes `formatted_results`, engine metadata, fallback information, time range, page, result count, instant answer, related queries, extracted top content, result objects, and parser attempts. The original URL-resolution diagnostics are retained.
 
 Both generators are separate output branches in `scripts/dp_browser.py`. The `--output json|text` argument selects exactly one branch. The runtime passes the selected stdout through unchanged; it does not convert, normalize, or reformat either output. The **Debug output** setting is read when each search starts, so changing the checkbox affects the next search without restarting the plugin.
 
