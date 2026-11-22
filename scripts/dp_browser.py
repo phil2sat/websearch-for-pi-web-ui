@@ -1461,25 +1461,48 @@ try {
     const ansEl = document.querySelector('div[data-attrid], .kp-blk, .hgKElc, .IZ6rdc');
     if (ansEl) instantAnswer = textOf(ansEl, 400);
 
-    const cards = document.querySelectorAll('#search .g, div.g:not(.g-blk), #rso > div.MjjYud');
-    for (const card of cards) {
-      if (isAdCard(card)) continue;
-      const linkEl = card.querySelector('h3 a[href], a[href]');
-      if (!linkEl) continue;
-      const href = cleanUrl(linkEl.getAttribute('href'), card);
-      if (!href || !/^https?:\/\//i.test(href) || /(^|\.)google\.[a-z.]+\//i.test(href) || seenUrls.has(href)) continue;
-      seenUrls.add(href);
+    // Google may wrap each h3 in its result anchor instead of placing the anchor inside h3.
+    const headings = document.querySelectorAll('#search h3, #rso h3, h3');
+    for (const heading of headings) {
+      if (heading.closest('nav, header, footer, aside, form')) continue;
 
-      const titleEl = card.querySelector('h3') || linkEl;
-      const title = textOf(titleEl, 150);
-      const snippetEl = card.querySelector('div[data-sncf], .VwiC3b, .yXK7lf, .MUxGbd');
-      const snippet = textOf(snippetEl, 300);
-      const sourceEl = card.querySelector('cite, span.LEwnzc');
-      const site = textOf(sourceEl, 80);
+      const card = heading.closest('[data-sokoban-container], .MjjYud, #search .g, div.g:not(.g-blk)')
+        || heading.parentElement?.parentElement
+        || heading.parentElement;
+      if (!card || isAdCard(card)) continue;
+
+      const linkEl = heading.closest('a[href]')
+        || heading.querySelector('a[href]')
+        || card.querySelector('a[href]');
+      const rawHref = linkEl?.getAttribute('href')
+        || card.getAttribute('data-href')
+        || card.getAttribute('data-url');
+      if (!rawHref) continue;
+
+      const href = cleanUrl(rawHref, card);
+      if (!href || !/^https?:\/\//i.test(href) || /(^|\.)google\.[a-z.]+\//i.test(href) || seenUrls.has(href)) continue;
+
+      const title = textOf(heading, 180) || textOf(linkEl, 180);
+      if (!title || title.length < 3) continue;
+
+      const snippetEl = card.querySelector(
+        'div[data-sncf], [data-sncf], .VwiC3b, .yXK7lf, .MUxGbd, [class*="snippet"], [class*="description"]'
+      );
+      let snippet = textOf(snippetEl, 500);
+      if (!snippet) {
+        const textBlocks = Array.from(card.querySelectorAll('div, span'))
+          .filter(el => !el.querySelector('h3') && !el.querySelector('a[href]'))
+          .map(el => textOf(el, 500))
+          .filter(text => text && text.length >= 45 && text !== title);
+        snippet = textBlocks.sort((a, b) => b.length - a.length)[0] || '';
+      }
+
+      const sourceEl = card.querySelector('cite, [data-dtld], span.LEwnzc');
+      const site = textOf(sourceEl, 100);
+      seenUrls.add(href);
       const isOfficial = isOfficialBadge(card, href, title, site);
       const date = extractDate(card, snippet);
-
-      items.push({ title: title || '无标题', url: href, snippet: snippet || '', site: site || null, date: date || null, isOfficial: isOfficial });
+      items.push({ title: title, url: href, snippet: snippet || '', site: site || null, date: date || null, isOfficial: isOfficial });
       if (items.length >= limit) break;
     }
   }
@@ -1554,20 +1577,9 @@ try {
           .map(el => (el.innerText || '').replace(/\s+/g, ' ').trim())
           .filter(Boolean)
           .slice(0, 20),
-        result_links: Array.from(document.querySelectorAll('a[href]'))
-          .filter(a => a.querySelector('h3') || a.closest('#search .g, #rso > div, [data-sokoban-container]'))
-          .map(a => ({
-            title: (a.innerText || a.querySelector('h3')?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 160),
-            url: a.href
-          }))
-          .filter(a => a.title && /^https?:/.test(a.url) && !/google\.(com|de)\//i.test(a.url))
-          .slice(0, 20),
         selectors: {
-          old_google_cards: document.querySelectorAll('#search .g, div.g:not(.g-blk), #rso > div.MjjYud').length,
-          rso_children: document.querySelectorAll('#rso > *').length,
-          headings: document.querySelectorAll('#search h3, #rso h3, h3').length,
-          external_links: Array.from(document.querySelectorAll('a[href^="http"]'))
-            .filter(a => !/google\.(com|de)\//i.test(a.href)).length
+          result_headings: document.querySelectorAll('#search h3, #rso h3, h3').length,
+          result_containers: document.querySelectorAll('#search .g, #rso > div.MjjYud, [data-sokoban-container]').length
         }
       }
     });
@@ -2097,8 +2109,6 @@ def _search_locked(browser, args):
         if not results:
             empty_note = "该引擎确实没有结果" if res.get("declared_empty") else "版式变化，未解析到结果"
             attempt = {"engine": eng, "kind": "empty", "reason": empty_note}
-            if res.get("debug"):
-                attempt["debug"] = res["debug"]
             attempts.append(attempt)
             if not fallback_from and eng != candidate_engines[-1]:
                 fallback_from = eng
@@ -2140,6 +2150,13 @@ def _search_locked(browser, args):
                         except Exception:
                             pass
 
+        formatted_results = "\\n\\n".join(
+            f"{index}. [{item.get('title') or 'Untitled'}]({item.get('url')})\\n"
+            f"   {item.get('snippet') or 'No description available.'}"
+            for index, item in enumerate(results, 1)
+            if item.get("url")
+        )
+
         out(
             {
                 "ok": True,
@@ -2153,6 +2170,7 @@ def _search_locked(browser, args):
                 "instant_answer": res.get("instantAnswer"),
                 "related_queries": res.get("related_queries") or [],
                 "top_content": top_content,
+                "formatted_results": formatted_results,
                 "results": results,
                 "attempts": attempts,
             }
