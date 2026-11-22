@@ -1,9 +1,17 @@
-import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
+import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { delimiter, join } from "node:path";
+import { join } from "node:path";
 import { isIP } from "node:net";
 import { lookup } from "node:dns/promises";
+
+const execFileAsync = promisify(execFile);
+const PLUGIN_DIR = fileURLToPath(new URL(".", import.meta.url));
+const BOOTSTRAP_PATH = join(PLUGIN_DIR, "browser-bootstrap.py");
+const DEFAULT_BROWSER_PORT = 9333;
+const DEFAULT_BROWSER_TIMEOUT_MS = 60000;
 
 const ENGINES = {
   google: (query) => `https://www.google.com/search?q=${encodeURIComponent(query)}`,
@@ -28,45 +36,46 @@ const ENGINE_GUIDANCE = [
 const MAX_TEXT = 18000;
 const NAV_TIMEOUT_MS = 18000;
 const CDP_TIMEOUT_MS = 12000;
-const CHROMIUM_STARTUP_TIMEOUT_MS = 60000;
 
 function clip(value, max = MAX_TEXT) {
   const text = String(value ?? "");
   return text.length > max ? text.slice(0, max) + "\n… [content truncated]" : text;
 }
 
-function chromiumCandidates(settings) {
-  const candidates = [];
-  const add = (value) => {
-    if (typeof value === "string" && value.trim() && !candidates.includes(value.trim())) {
-      candidates.push(value.trim());
-    }
-  };
-  add(settings.chromiumPath);
-  add(process.env.CHROMIUM_PATH);
-  add(process.env.CHROME_BIN);
-  add(process.env.GOOGLE_CHROME_BIN);
+function resolvePython() {
+  const isWindows = process.platform === "win32";
+  const virtualenvPython = join(PLUGIN_DIR, ".venv", isWindows ? "Scripts/python.exe" : "bin/python");
+  if (existsSync(virtualenvPython)) return virtualenvPython;
+  if (process.env.PYTHON_PATH && existsSync(process.env.PYTHON_PATH)) return process.env.PYTHON_PATH;
+  return isWindows ? "python.exe" : "python3";
+}
 
-  if (process.platform === "win32") {
-    for (const base of [process.env.PROGRAMFILES, process.env["PROGRAMFILES(X86)"], process.env.LOCALAPPDATA]) {
-      if (!base) continue;
-      add(join(base, "Google", "Chrome", "Application", "chrome.exe"));
-      add(join(base, "Microsoft", "Edge", "Application", "msedge.exe"));
-      add(join(base, "Chromium", "Application", "chrome.exe"));
-    }
-  } else if (process.platform === "darwin") {
-    add("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome");
-    add("/Applications/Chromium.app/Contents/MacOS/Chromium");
-    add("/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge");
-  } else {
-    for (const binary of ["chromium", "chromium-browser", "google-chrome", "google-chrome-stable", "chrome", "microsoft-edge"]) {
-      for (const directory of (process.env.PATH ?? "").split(delimiter)) add(join(directory, binary));
-      add(join("/usr/bin", binary));
-      add(join("/usr/local/bin", binary));
-      add(join("/snap/bin", binary));
-    }
+async function runBrowserScript(action, profileDir) {
+  const env = { ...process.env, DP_BROWSER_PORT: String(DEFAULT_BROWSER_PORT), DP_USER_DATA: profileDir, DP_HEADLESS: "1", PYTHONIOENCODING: "utf-8" };
+  const { stdout, stderr } = await execFileAsync(resolvePython(), [BOOTSTRAP_PATH, action], {
+    env, timeout: 180000, windowsHide: true, maxBuffer: 2 * 1024 * 1024, encoding: "utf8"
+  });
+  const output = String(stdout || "").trim();
+  if (!output) throw new Error("Chromium bootstrap returned no output. " + String(stderr || "").slice(-1200));
+  let result;
+  try { result = JSON.parse(output.split(/\r?\n/).filter(Boolean).at(-1)); }
+  catch { throw new Error("Invalid Chromium bootstrap response: " + output.slice(-1200)); }
+  if (!result?.ok) throw new Error(result?.error || "DrissionPage could not start Chromium.");
+  return { result, diagnostic: String(stderr || "").slice(-2000) };
+}
+
+async function waitForBrowser() {
+  const deadline = Date.now() + DEFAULT_BROWSER_TIMEOUT_MS;
+  let lastError = "";
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch("http://127.0.0.1:" + DEFAULT_BROWSER_PORT + "/json/version");
+      if (response.ok) return await response.json();
+      lastError = "HTTP " + response.status;
+    } catch (error) { lastError = String(error?.message ?? error); }
+    await delay(250);
   }
-  return candidates;
+  throw new Error("DrissionPage started but Chromium CDP did not become ready on port " + DEFAULT_BROWSER_PORT + ": " + lastError);
 }
 
 function isPrivateAddress(hostname) {
@@ -282,96 +291,24 @@ export default {
 
     const stateDir = join(host.dataDir || homedir(), "websearch-for-pi-web-ui");
     const profileDir = join(stateDir, "chromium-profile");
-    const portFile = join(profileDir, "DevToolsActivePort");
     mkdirSync(stateDir, { recursive: true });
 
-    let child = null;
-    let cdpPort = 0;
-    let executable = "";
+    let cdpPort = DEFAULT_BROWSER_PORT;
     let stderrTail = "";
     let starting = null;
     let disposed = false;
 
-    function discoverExecutable() {
-      for (const candidate of chromiumCandidates(settings)) {
-        if (existsSync(candidate)) return candidate;
-      }
-      throw new Error("Chromium executable not found. Install Chromium, Chrome, or Edge, or set chromiumPath in plugin settings.");
-    }
-
     async function startBrowser() {
       if (disposed) throw new Error("The websearch plugin is deactivated.");
-      if (child && child.exitCode === null && cdpPort) return;
       if (starting) return starting;
       starting = (async () => {
-        executable = discoverExecutable();
         mkdirSync(profileDir, { recursive: true });
-        try {
-          rmSync(portFile, { force: true });
-        } catch {}
-        const extraArgs = String(settings.headlessArgs ?? "").split(/\\r?\\n/).map((value) => value.trim()).filter(Boolean);
-        const reservedArg = /^(--remote-debugging-port|--remote-debugging-address|--user-data-dir|--headless)(=|$)/i;
-        if (extraArgs.some((argument) => reservedArg.test(argument))) {
-          throw new Error("headlessArgs cannot override the headless, remote-debugging, or profile arguments.");
-        }
-        const args = [
-          "--headless=new",
-          "--no-sandbox",
-          "--disable-dev-shm-usage",
-          "--disable-gpu",
-          "--no-first-run",
-          "--no-default-browser-check",
-          "--disable-background-networking",
-          "--disable-features=Translate,BackForwardCache",
-          "--remote-debugging-address=127.0.0.1",
-          "--remote-debugging-port=0",
-          `--user-data-dir=${profileDir}`,
-          ...extraArgs,
-          "about:blank"
-        ];
-        child = spawn(executable, args, { stdio: ["ignore", "ignore", "pipe"], windowsHide: true });
-        child.stderr?.on("data", (chunk) => {
-          stderrTail = (stderrTail + String(chunk)).slice(-5000);
-        });
-        child.once("exit", () => {
-          child = null;
-          cdpPort = 0;
-        });
-        child.once("error", (error) => {
-          stderrTail = String(error);
-          child = null;
-          cdpPort = 0;
-        });
-        const deadline = Date.now() + CHROMIUM_STARTUP_TIMEOUT_MS;
-        while (Date.now() < deadline) {
-          if (!child || child.exitCode !== null) {
-            throw new Error(`Chromium exited during startup. ${stderrTail.slice(-1200)}`);
-          }
-          try {
-            const lines = readFileSync(portFile, "utf8").trim().split(/\\r?\\n/);
-            const port = Number(lines[0]);
-            if (port > 0 && lines[1]?.startsWith("/")) {
-              cdpPort = port;
-              const response = await fetch(`http://127.0.0.1:${cdpPort}/json/version`);
-              if (response.ok) return;
-            }
-          } catch {}
-          await delay(200);
-        }
-        throw new Error(`Timed out after ${CHROMIUM_STARTUP_TIMEOUT_MS / 1000}s waiting for Chromium DevToolsActivePort. ${stderrTail.slice(-1200)}`);
+        const { diagnostic } = await runBrowserScript("start", profileDir);
+        stderrTail = diagnostic;
+        await waitForBrowser();
+        cdpPort = DEFAULT_BROWSER_PORT;
       })();
-      try {
-        await starting;
-      } catch (error) {
-        try {
-          child?.kill("SIGTERM");
-        } catch {}
-        child = null;
-        cdpPort = 0;
-        throw error;
-      } finally {
-        starting = null;
-      }
+      try { await starting; } finally { starting = null; }
     }
 
     async function withPage(url, operation) {
@@ -514,7 +451,7 @@ export default {
       async execute() {
         try {
           await startBrowser();
-          return { ok: true, running: Boolean(child && child.exitCode === null), executable, cdpPort, profileDir, headless: true };
+          return { ok: true, running: true, browser: "DrissionPage Chromium", cdpPort, profileDir, headless: true };
         } catch (error) {
           return { ok: false, running: false, error: String(error?.message ?? error), profileDir };
         }
@@ -529,23 +466,9 @@ export default {
           unregister?.();
         } catch {}
       }
-      const processToStop = child;
-      child = null;
-      cdpPort = 0;
-      if (processToStop && processToStop.exitCode === null) {
-        try {
-          processToStop.kill("SIGTERM");
-        } catch {}
-        await Promise.race([
-          new Promise((resolve) => processToStop.once("exit", resolve)),
-          delay(3000)
-        ]);
-        if (processToStop.exitCode === null) {
-          try {
-            processToStop.kill("SIGKILL");
-          } catch {}
-        }
-      }
+      try { await runBrowserScript("quit", profileDir); }
+      catch (error) { host.log?.("warn", "Chromium shutdown failed: " + String(error?.message ?? error)); }
+      cdpPort = DEFAULT_BROWSER_PORT;
     };
   }
 };
