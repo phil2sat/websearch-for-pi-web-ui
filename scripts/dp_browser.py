@@ -2395,58 +2395,17 @@ def _search_locked(browser, args):
                             pass
 
         formatted_results = "\n\n".join(
-            f"{index}. {item.get('title') or 'Untitled'}{(' — ' + item['site']) if item.get('redirect') and item.get('site') else ''}\n"
-            f"   {item.get('url')}{'  (URL ggf. gekürzt)' if item.get('approx_url') else ''}\n\n"
-            f"   {item.get('snippet') or 'Keine Beschreibung verfügbar.'}"
+            f"{index}. {item.get('title') or 'Untitled'}\n"
+            f"{item.get('url')}\n\n"
+            f"{item.get('snippet') or 'Keine Beschreibung verfügbar.'}"
             for index, item in enumerate(results, 1)
             if item.get("url")
         )
-        diag = [
-            f"[{index}] " + (item.get("resolve_debug") or " | ".join((item.get("anchors_debug") or ["keine Link-Elemente im Treffer gefunden"])[:2]))
-            for index, item in enumerate(results, 1)
-            if item.get("approx_url")
-        ]
-        if diag:
-            formatted_results += "\n\nDiagnose (URL nur gekürzt gefunden, bitte diesen Block weitergeben):\n" + "\n".join(diag)
+        sys.stdout.write(formatted_results + "\n")
+        sys.exit(0)
 
-        out(
-            {
-                "ok": True,
-                "cmd": CMD,
-                "query": query,
-                "engine": eng,
-                "fallback_from": fallback_from,
-                "time_range": time_range if time_range != "all" else None,
-                "page": page,
-                "count": len(results),
-                "instant_answer": res.get("instantAnswer"),
-                "related_queries": res.get("related_queries") or [],
-                "top_content": top_content,
-                "formatted_results": formatted_results,
-                "results": results,
-                "attempts": attempts,
-            }
-        )
-        return
-
-    out(
-        {
-            "ok": True,
-            "cmd": CMD,
-            "query": query,
-            "formatted_results": _format_no_results(query, attempts),
-            "engine": None,
-            "fallback_from": None,
-            "time_range": time_range if time_range != "all" else None,
-            "page": page,
-            "count": 0,
-            "instant_answer": None,
-            "related_queries": [],
-            "top_content": None,
-            "results": [],
-            "attempts": attempts,
-        }
-    )
+    sys.stdout.write(_format_no_results(query, attempts) + "\n")
+    sys.exit(0)
 
 
 def _format_no_results(query, attempts):
