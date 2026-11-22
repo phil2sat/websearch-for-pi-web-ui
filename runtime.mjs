@@ -440,16 +440,22 @@ export default {
         const limit = Math.min(20, Math.max(1, Number(params.limit) || 10));
         try {
           if (signal?.aborted) throw new Error("Search cancelled.");
-          await startBrowser();
-          const py = resolvePython();
-          // Use the setting snapshot initialized at activation and kept current by onSettingsChanged.
-          // Re-reading getSettings() here can return a stale snapshot and override a newer settings event.
-          const useDebugOutput = debugOutput;
+
+          // Read the current persisted setting at execution time; the settings event keeps the local value as fallback.
+          const currentSettings = host.getSettings?.() ?? {};
+          const useDebugOutput = typeof currentSettings.debugOutput === "boolean"
+            ? currentSettings.debugOutput
+            : debugOutput;
+          debugOutput = useDebugOutput;
           const outputMode = useDebugOutput ? "json" : "text";
+
           host.log?.("info", "[websearch] search output mode selected", {
             debugOutput: useDebugOutput,
             outputMode,
           });
+
+          await startBrowser();
+          const py = resolvePython();
           const env = { ...buildBrowserEnv(), DP_DEFAULT_ENGINE: engine };
           const args = ["search", query, "--engine", engine, "--no-fallback", "--limit", String(limit), "--output", outputMode];
           const response = await runPythonScript(py, args, { env, timeout: 150000, scriptPath: BROWSER_USE_SCRIPT_PATH });
