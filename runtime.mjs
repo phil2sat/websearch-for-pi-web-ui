@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
 import { isIP } from "node:net";
+import { lookup } from "node:dns/promises";
 
 const ENGINES = {
   google: (query) => `https://www.google.com/search?q=${encodeURIComponent(query)}`,
@@ -96,6 +97,22 @@ function validatePublicUrl(input) {
   return url.href;
 }
 
+async function isPublicNetworkUrl(input) {
+  let url;
+  try {
+    url = new URL(String(input));
+  } catch {
+    return false;
+  }
+  if (!["http:", "https:"].includes(url.protocol) || isPrivateAddress(url.hostname)) return false;
+  try {
+    const addresses = await lookup(url.hostname, { all: true, verbatim: true });
+    return addresses.length > 0 && addresses.every((entry) => !isPrivateAddress(entry.address));
+  } catch {
+    return false;
+  }
+}
+
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -106,6 +123,14 @@ class CdpConnection {
     this.socket = null;
     this.nextId = 0;
     this.pending = new Map();
+    this.handlers = new Map();
+  }
+
+  on(eventName, handler) {
+    const handlers = this.handlers.get(eventName) || new Set();
+    handlers.add(handler);
+    this.handlers.set(eventName, handlers);
+    return () => handlers.delete(handler);
   }
 
   async connect() {
@@ -129,7 +154,12 @@ class CdpConnection {
       } catch {
         return;
       }
-      if (!message.id) return;
+      if (message.id === undefined) {
+        for (const handler of this.handlers.get(message.method) || []) {
+          try { handler(message.params || {}); } catch {}
+        }
+        return;
+      }
       const pending = this.pending.get(message.id);
       if (!pending) return;
       this.pending.delete(message.id);
@@ -352,6 +382,19 @@ export default {
       try {
         await cdp.command("Page.enable");
         await cdp.command("Runtime.enable");
+        cdp.on("Fetch.requestPaused", (event) => {
+          void (async () => {
+            const safe = await isPublicNetworkUrl(event.request?.url);
+            if (safe) {
+              await cdp.command("Fetch.continueRequest", { requestId: event.requestId });
+            } else {
+              await cdp.command("Fetch.failRequest", { requestId: event.requestId, errorReason: "BlockedByClient" });
+            }
+          })().catch(() => {
+            void cdp.command("Fetch.failRequest", { requestId: event.requestId, errorReason: "BlockedByClient" }).catch(() => {});
+          });
+        });
+        await cdp.command("Fetch.enable", { patterns: [{ urlPattern: "*", requestStage: "Request" }] });
         const navigation = await cdp.command("Page.navigate", { url }, NAV_TIMEOUT_MS);
         if (navigation.errorText) throw new Error(navigation.errorText);
         const deadline = Date.now() + NAV_TIMEOUT_MS;
