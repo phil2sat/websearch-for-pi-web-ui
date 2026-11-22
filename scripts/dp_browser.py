@@ -1568,7 +1568,12 @@ try {
       const site = citeText ? citeText.split('›')[0].replace(/^https?:\/\//, '').trim().slice(0, 100) : null;
       const isOfficial = isOfficialBadge(card, href, title, site);
       const date = extractDate(card, snippet);
-      items.push({ title: title, url: href, snippet: snippet || '', site: site, date: date || null, isOfficial: isOfficial, approx_url: approx || undefined });
+      let anchorsDebug;
+      if (approx) {
+        anchorsDebug = Array.from(card.querySelectorAll('a, [role="link"], [data-href], [data-url]')).slice(0, 6)
+          .map(el => (el.outerHTML || '').replace(/>[\s\S]*$/, '>').replace(/\s+/g, ' ').slice(0, 400));
+      }
+      items.push({ title: title, url: href, snippet: snippet || '', site: site, date: date || null, isOfficial: isOfficial, approx_url: approx || undefined, anchors_debug: anchorsDebug });
       if (items.length >= limit) break;
     }
     if (items.length === 0) googleRejects = rejects.slice(0, 20);
@@ -2228,6 +2233,13 @@ def _search_locked(browser, args):
             for index, item in enumerate(results, 1)
             if item.get("url")
         )
+        diag = [
+            f"[{index}] " + " | ".join(item.get("anchors_debug") or ["keine Link-Elemente im Treffer gefunden"])
+            for index, item in enumerate(results, 1)
+            if item.get("approx_url")
+        ]
+        if diag:
+            formatted_results += "\n\nDiagnose (URL nur gekürzt gefunden, bitte diesen Block weitergeben):\n" + "\n".join(diag)
 
         out(
             {
