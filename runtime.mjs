@@ -24,7 +24,7 @@ const ENGINE_GUIDANCE = [
   "If an engine presents CAPTCHA, unusual-traffic, or bot-verification content, report the block; do not claim that no results exist.",
   "Use read_url to inspect promising result pages. Preserve the returned URLs as source references.",
   "Result URLs pointing to google.*/goto are Google redirect links: pass them unchanged to read_url, which resolves them to the real page. Name the source by the site shown after the title.",
-  "For user-facing search answers, output formatted_results exactly as returned (numbered title, URL on the next line, blank line, description). Do not re-wrap it in JSON or code blocks, and do not call browser_status instead of reporting a failed or empty search.",
+  "For user-facing search answers, use only the plain-text search results returned by search_web: title, original result URL, and page description/snippet. Never output the raw JSON response, metadata, diagnostics, attempts, related queries, or parser details.",
   "Do not expose internal attempts, parser diagnostics, debug fields, or raw JSON to the user unless they explicitly request diagnostics.",
 ];
 
@@ -42,8 +42,18 @@ function toolResult(text) {
 
 function formatSearchText(response, query, engine) {
   if (!response?.ok) return `Suche fehlgeschlagen: ${response?.error ?? "unbekannter Fehler"}`;
-  const body = String(response.formatted_results ?? "").trim();
-  return body || `Keine Ergebnisse für „${query}“ (${engine}).`;
+
+  const results = Array.isArray(response.results) ? response.results : [];
+  const entries = results
+    .filter((item) => item && typeof item.url === "string" && item.url.trim())
+    .map((item, index) => {
+      const title = String(item.title ?? "Untitled").trim();
+      const url = item.url.trim();
+      const description = String(item.snippet ?? "").trim() || "Keine Beschreibung verfügbar.";
+      return `${index + 1}. ${title}\\n${url}\\n\\n${description}`;
+    });
+
+  return entries.join("\\n\\n") || `Keine Ergebnisse für „${query}“ (${engine}).`;
 }
 
 function resolvePython() {
@@ -429,7 +439,7 @@ export default {
           const args = ["search", query, "--engine", engine, "--no-fallback", "--limit", String(limit)];
           const response = await runPythonScript(py, args, { env, timeout: 150000, scriptPath: BROWSER_USE_SCRIPT_PATH });
           recordActivity();
-          return toolResult(formatSearchText(response, query, engine), response);
+          return toolResult(formatSearchText(response, query, engine));
         } catch (error) {
           return toolResult(`Suche fehlgeschlagen: ${String(error?.message ?? error)}`, { ok: false, engine, query, diagnostic: stderrTail.slice(-1000) });
         }
