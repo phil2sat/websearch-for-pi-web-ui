@@ -74,3 +74,7 @@ Search-engine HTML changes over time. The extractor uses engine-specific selecto
 ## Search implementation
 
 Search execution, result extraction, engine-specific selectors, and browser connection use the vendored `scripts/dp_browser.py` implementation from `pi-web-ui` `browser_use` (reference revision `33c3f6c2d49f9f0a3c437df3bfe5e41d09bba355`). Google is the default. The selected engine is passed explicitly with `--no-fallback`, so the plugin never silently switches search engines. The browser lifecycle invokes the same script's `tabs` and `quit` commands; `search_web` invokes `search`, and `read_url` invokes `read_page`. These operations use the upstream browser-control implementation.
+
+### Debug output setting fix (0.1.37)
+
+The `debugOutput` setting is read through the plugin settings API (`host.getSettings()`), not the plugin storage API. The current value is refreshed for every search invocation, so switching the setting reliably changes the output mode without relying on stale in-memory state.
