@@ -1929,7 +1929,6 @@ def _search_locked(browser, args):
     time_range = "all"
     fetch_top = False
     fast_search = os.environ.get("DP_FAST_SEARCH", "1").strip().lower() not in ("0", "false", "no", "off")
-    tab_isolation = False
 
     i = 0
     query_parts = []
@@ -1996,146 +1995,145 @@ def _search_locked(browser, args):
     fallback_from = None
     attempts = []
 
-    try:
-        for eng in candidate_engines:
-            is_primary = eng == primary_engine
+    for eng in candidate_engines:
+        is_primary = eng == primary_engine
 
-            reachable, net_note = _engine_reachable(health, eng, health_ttl)
-            if not reachable and not is_primary:
-                attempts.append(
-                    {
-                        "engine": eng,
-                        "kind": "network",
-                        "reason": f"{ENGINE_HOSTS.get(eng, eng)} 不可达（{net_note}）",
-                    }
-                )
-                if not fallback_from and eng != candidate_engines[-1]:
-                    fallback_from = eng
-                continue
-
-            recent_block = _engine_blocked_reason(health, eng, block_ttl)
-            if recent_block and not is_primary:
-                attempts.append(
-                    {"engine": eng, "kind": "blocked", "reason": f"{recent_block}（近期已拦截，跳过）"}
-                )
-                if not fallback_from and eng != candidate_engines[-1]:
-                    fallback_from = eng
-                continue
-
-            try:
-                res = _execute_search_on_tab(
-                    search_tab,
-                    query,
-                    eng,
-                    limit,
-                    official_only=official_only,
-                    time_range=time_range,
-                    page=page,
-                    fast_search=fast_search,
-                )
-            except Exception as e:
-                attempts.append({"engine": eng, "kind": "error", "reason": f"{type(e).__name__}: {e}"})
-                if not fallback_from and eng != candidate_engines[-1]:
-                    fallback_from = eng
-                continue
-
-            if not isinstance(res, dict):
-                attempts.append({"engine": eng, "kind": "error", "reason": "搜索结果解析失败"})
-                continue
-
-            if res.get("blocked") or res.get("error"):
-                reason = res.get("error") or "页面被拦截或验证码"
-                kind = res.get("kind") or "blocked"
-                attempts.append({"engine": eng, "kind": kind, "reason": str(reason)})
-                if kind == "network":
-                    _mark_engine_unreachable(health, eng)
-                else:
-                    _mark_engine_blocked(health, eng, str(reason))
-                if not fallback_from and eng != candidate_engines[-1]:
-                    fallback_from = eng
-                continue
-
-            _mark_engine_reachable(health, eng)
-            results = res.get("results") or []
-            if not results:
-                empty_note = "该引擎确实没有结果" if res.get("declared_empty") else "版式变化，未解析到结果"
-                attempts.append({"engine": eng, "kind": "empty", "reason": empty_note})
-                if not fallback_from and eng != candidate_engines[-1]:
-                    fallback_from = eng
-                continue
-
-            _clear_engine_blocked(health, eng)
-
-            results = _apply_domain_diversity(results, max_per_domain=2)
-            results = results[:limit]
-
-            top_content = None
-            if fetch_top and results:
-                first_url = results[0].get("url")
-                if first_url and first_url.startswith("http"):
-                    content_tab = None
-                    try:
-                        content_tab = browser.new_tab()
-                        apply_request_user_agent(content_tab)
-                        content_tab.get(first_url)
-                        try:
-                            content_tab.wait.doc_loaded(timeout=4.0)
-                            content_tab.wait.ele_loaded("article, main, body", timeout=3.0)
-                        except Exception:
-                            pass
-                        raw_top = content_tab.run_js(ARTICLE_EXTRACT_JS, 2000)
-                        top_data = json.loads(raw_top) if isinstance(raw_top, str) else raw_top
-                        if top_data and top_data.get("ok"):
-                            top_content = {
-                                "title": top_data.get("title") or results[0].get("title"),
-                                "url": first_url,
-                                "content": top_data.get("content", ""),
-                            }
-                    except Exception:
-                        pass
-                    finally:
-                        if content_tab is not None:
-                            try:
-                                content_tab.close()
-                            except Exception:
-                                pass
-
-            out(
+        reachable, net_note = _engine_reachable(health, eng, health_ttl)
+        if not reachable and not is_primary:
+            attempts.append(
                 {
-                    "ok": True,
-                    "cmd": CMD,
-                    "query": query,
                     "engine": eng,
-                    "fallback_from": fallback_from,
-                    "time_range": time_range if time_range != "all" else None,
-                    "page": page,
-                    "count": len(results),
-                    "instant_answer": res.get("instantAnswer"),
-                    "related_queries": res.get("related_queries") or [],
-                    "top_content": top_content,
-                    "results": results,
-                    "attempts": attempts,
+                    "kind": "network",
+                    "reason": f"{ENGINE_HOSTS.get(eng, eng)} 不可达（{net_note}）",
                 }
             )
-            return
+            if not fallback_from and eng != candidate_engines[-1]:
+                fallback_from = eng
+            continue
+
+        recent_block = _engine_blocked_reason(health, eng, block_ttl)
+        if recent_block and not is_primary:
+            attempts.append(
+                {"engine": eng, "kind": "blocked", "reason": f"{recent_block}（近期已拦截，跳过）"}
+            )
+            if not fallback_from and eng != candidate_engines[-1]:
+                fallback_from = eng
+            continue
+
+        try:
+            res = _execute_search_on_tab(
+                search_tab,
+                query,
+                eng,
+                limit,
+                official_only=official_only,
+                time_range=time_range,
+                page=page,
+                fast_search=fast_search,
+            )
+        except Exception as e:
+            attempts.append({"engine": eng, "kind": "error", "reason": f"{type(e).__name__}: {e}"})
+            if not fallback_from and eng != candidate_engines[-1]:
+                fallback_from = eng
+            continue
+
+        if not isinstance(res, dict):
+            attempts.append({"engine": eng, "kind": "error", "reason": "搜索结果解析失败"})
+            continue
+
+        if res.get("blocked") or res.get("error"):
+            reason = res.get("error") or "页面被拦截或验证码"
+            kind = res.get("kind") or "blocked"
+            attempts.append({"engine": eng, "kind": kind, "reason": str(reason)})
+            if kind == "network":
+                _mark_engine_unreachable(health, eng)
+            else:
+                _mark_engine_blocked(health, eng, str(reason))
+            if not fallback_from and eng != candidate_engines[-1]:
+                fallback_from = eng
+            continue
+
+        _mark_engine_reachable(health, eng)
+        results = res.get("results") or []
+        if not results:
+            empty_note = "该引擎确实没有结果" if res.get("declared_empty") else "版式变化，未解析到结果"
+            attempts.append({"engine": eng, "kind": "empty", "reason": empty_note})
+            if not fallback_from and eng != candidate_engines[-1]:
+                fallback_from = eng
+            continue
+
+        _clear_engine_blocked(health, eng)
+
+        results = _apply_domain_diversity(results, max_per_domain=2)
+        results = results[:limit]
+
+        top_content = None
+        if fetch_top and results:
+            first_url = results[0].get("url")
+            if first_url and first_url.startswith("http"):
+                content_tab = None
+                try:
+                    content_tab = browser.new_tab()
+                    apply_request_user_agent(content_tab)
+                    content_tab.get(first_url)
+                    try:
+                        content_tab.wait.doc_loaded(timeout=4.0)
+                        content_tab.wait.ele_loaded("article, main, body", timeout=3.0)
+                    except Exception:
+                        pass
+                    raw_top = content_tab.run_js(ARTICLE_EXTRACT_JS, 2000)
+                    top_data = json.loads(raw_top) if isinstance(raw_top, str) else raw_top
+                    if top_data and top_data.get("ok"):
+                        top_content = {
+                            "title": top_data.get("title") or results[0].get("title"),
+                            "url": first_url,
+                            "content": top_data.get("content", ""),
+                        }
+                except Exception:
+                    pass
+                finally:
+                    if content_tab is not None:
+                        try:
+                            content_tab.close()
+                        except Exception:
+                            pass
 
         out(
             {
                 "ok": True,
                 "cmd": CMD,
                 "query": query,
-                "engine": None,
-                "fallback_from": None,
+                "engine": eng,
+                "fallback_from": fallback_from,
                 "time_range": time_range if time_range != "all" else None,
                 "page": page,
-                "count": 0,
-                "instant_answer": None,
-                "related_queries": [],
-                "top_content": None,
-                "results": [],
+                "count": len(results),
+                "instant_answer": res.get("instantAnswer"),
+                "related_queries": res.get("related_queries") or [],
+                "top_content": top_content,
+                "results": results,
                 "attempts": attempts,
             }
         )
+        return
+
+    out(
+        {
+            "ok": True,
+            "cmd": CMD,
+            "query": query,
+            "engine": None,
+            "fallback_from": None,
+            "time_range": time_range if time_range != "all" else None,
+            "page": page,
+            "count": 0,
+            "instant_answer": None,
+            "related_queries": [],
+            "top_content": None,
+            "results": [],
+            "attempts": attempts,
+        }
+    )
 
 
 ARTICLE_EXTRACT_JS = r"""
