@@ -78,3 +78,8 @@ Search execution, result extraction, engine-specific selectors, and browser conn
 ### Debug output setting fix (0.1.37)
 
 The `debugOutput` setting is read through the plugin settings API (`host.getSettings()`), not the plugin storage API. The current value is refreshed for every search invocation, so switching the setting reliably changes the output mode without relying on stale in-memory state.
+
+
+### Output mode behavior (0.1.38)
+
+The **Debug output** setting selects the actual `search_web` tool payload. Disabled returns only formatted result text. Enabled returns the complete diagnostic JSON as a text content block, and the agent instructions require that JSON to be reproduced verbatim rather than summarized or converted back to plain text. The setting is refreshed for each search invocation.
