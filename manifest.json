@@ -3,7 +3,7 @@
   "id": "websearch-for-pi-web-ui",
   "name": "Local Chromium Web Search",
   "nameEn": "Local Chromium Web Search",
-  "version": "0.1.36",
+  "version": "0.1.37",
   "icon": "🔎",
   "description": "Local headless Chromium web search. Google by default, with selectable regional search engines. No search API or external MCP service.",
   "descriptionEn": "Local headless Chromium web search. Google by default, with selectable regional search engines. No search API or external MCP service.",
