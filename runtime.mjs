@@ -34,6 +34,16 @@ function clip(value, max = MAX_TEXT) {
   return text.length > max ? text.slice(0, max) + "\n… [content truncated]" : text;
 }
 
+function toolResult(text, details) {
+  return { content: [{ type: "text", text: String(text ?? "") }], details: details ?? {} };
+}
+
+function formatSearchText(response, query, engine) {
+  if (!response?.ok) return `Suche fehlgeschlagen: ${response?.error ?? "unbekannter Fehler"}`;
+  const body = String(response.formatted_results ?? "").trim();
+  return body || `Keine Ergebnisse für „${query}“ (${engine}).`;
+}
+
 function resolvePython() {
   const isWindows = process.platform === "win32";
   const virtualenvPython = join(PLUGIN_DIR, ".venv", isWindows ? "Scripts/python.exe" : "bin/python");
@@ -396,9 +406,9 @@ export default {
       },
       async execute(_toolCallId, params, signal) {
         const query = String(params.query ?? "").trim();
-        if (!query) return { ok: false, error: "query is required" };
+        if (!query) return toolResult("Suche fehlgeschlagen: query is required", { ok: false });
         const engine = String(params.engine ?? "google").toLowerCase();
-        if (!ENGINES[engine]) return { ok: false, error: `Unsupported engine: ${engine}`, engines: Object.keys(ENGINES) };
+        if (!ENGINES[engine]) return toolResult(`Suche fehlgeschlagen: Unsupported engine: ${engine}`, { ok: false, engines: Object.keys(ENGINES) });
         const limit = Math.min(20, Math.max(1, Number(params.limit) || 10));
         try {
           if (signal?.aborted) throw new Error("Search cancelled.");
@@ -408,15 +418,9 @@ export default {
           const args = ["search", query, "--engine", engine, "--no-fallback", "--limit", String(limit)];
           const response = await runPythonScript(py, args, { env, scriptPath: BROWSER_USE_SCRIPT_PATH });
           recordActivity();
-          if (!response?.ok) {
-            return { ...response, formatted_results: `Suche fehlgeschlagen: ${response?.error ?? "unbekannter Fehler"}` };
-          }
-          if (!response.formatted_results) {
-            response.formatted_results = `Keine Ergebnisse für „${query}“ (${engine}).`;
-          }
-          return response;
+          return toolResult(formatSearchText(response, query, engine), response);
         } catch (error) {
-          return { ok: false, engine, query, formatted_results: `Suche fehlgeschlagen: ${String(error?.message ?? error)}`, error: String(error?.message ?? error), diagnostic: stderrTail.slice(-1000) };
+          return toolResult(`Suche fehlgeschlagen: ${String(error?.message ?? error)}`, { ok: false, engine, query, diagnostic: stderrTail.slice(-1000) });
         }
       }
     });
@@ -446,16 +450,14 @@ export default {
             signal,
             scriptPath: BROWSER_USE_SCRIPT_PATH
           });
-          if (!response?.ok) return response;
+          if (!response?.ok) return toolResult(`Seite konnte nicht gelesen werden: ${response?.error ?? "unbekannter Fehler"}`, response);
           recordActivity();
-          return {
-            ok: true,
-            title: response.title ?? "",
-            url: response.url ?? url,
-            text: clip(response.content ?? "", maxChars)
-          };
+          const title = response.title ?? "";
+          const finalUrl = response.url ?? url;
+          const text = clip(response.content ?? "", maxChars);
+          return toolResult(`${title}\n${finalUrl}\n\n${text}`, { ok: true, title, url: finalUrl });
         } catch (error) {
-          return { ok: false, error: String(error?.message ?? error) };
+          return toolResult(`Seite konnte nicht gelesen werden: ${String(error?.message ?? error)}`, { ok: false });
         }
       }
     });
@@ -470,9 +472,9 @@ export default {
           await startBrowser();
           const running = await checkPortAlive(DEFAULT_BROWSER_PORT);
           if (!running) throw new Error("Chromium CDP port is not accepting connections.");
-          return { ok: true, running: true, browser: "DrissionPage Chromium", cdpPort: DEFAULT_BROWSER_PORT, profileDir, headless: headlessMode };
+          return toolResult(`Browser läuft (DrissionPage Chromium, CDP-Port ${DEFAULT_BROWSER_PORT}, ${headlessMode ? "headless" : "sichtbar"}).`, { ok: true, running: true, cdpPort: DEFAULT_BROWSER_PORT, profileDir, headless: headlessMode });
         } catch (error) {
-          return { ok: false, running: false, error: String(error?.message ?? error), profileDir };
+          return toolResult(`Browser nicht verfügbar: ${String(error?.message ?? error)}`, { ok: false, running: false, profileDir });
         }
       }
     });

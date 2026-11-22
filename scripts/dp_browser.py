@@ -1490,6 +1490,30 @@ try {
       }
       return '';
     }
+    function urlFromMarkup(card, citeHost) {
+      let html = '';
+      try { html = card.outerHTML || ''; } catch (e) { return ''; }
+      html = html.replace(/&amp;/g, '&');
+      const found = [];
+      const push = (u) => {
+        if (!u) return;
+        try { u = decodeURIComponent(u); } catch (e) {}
+        u = u.replace(/[&?](ved|usg|sa|source|rct|opi|cd|esrc)=.*$/i, '').replace(/[\\)"'<>\s,;]+$/, '');
+        u = u.split(';')[0];
+        if (!/^https?:\/\//i.test(u)) return;
+        let h = '';
+        try { h = new URL(u).hostname.toLowerCase().replace(/^www\./, ''); } catch (e) { return; }
+        if (/(^|\.)(google|gstatic|googleusercontent|googleapis|schema)\.[a-z.]+$/.test(h) || h === 'w3.org') return;
+        try { const pu = new URL(u); if (pu.pathname.length <= 1 && !pu.search) return; } catch (e) { return; }
+        found.push({ u, h });
+      };
+      for (const m of html.matchAll(/(?:[?&;](?:url|q)=)(https?(?:%3A|:)(?:%2F|\/)(?:%2F|\/)[^&"'\s<>]+)/gi)) push(m[1]);
+      for (const m of html.matchAll(/https?:\/\/[^\s"'<>\\]+/gi)) push(m[0]);
+      const same = found.filter(f => citeHost && (f.h === citeHost || f.h.endsWith('.' + citeHost) || citeHost.endsWith('.' + f.h)));
+      const pool = same.length ? same : (citeHost ? [] : found);
+      pool.sort((a, b) => b.u.length - a.u.length);
+      return pool[0] ? pool[0].u : '';
+    }
     function cardFor(h) {
       let node = h, best = h.parentElement;
       for (let i = 0; i < 9 && node.parentElement; i++) {
@@ -1513,16 +1537,23 @@ try {
       if (!href) {
         for (const a of card.querySelectorAll('a')) { href = urlFromAnchor(a); if (href) break; }
       }
+      const citeEl = card.querySelector('cite, [data-dtld]');
+      const citeRaw = textOf(citeEl, 300) || '';
+      const citeHost = ((citeRaw.match(/^(?:https?:\/\/)?([^\s›\/]+)/) || [])[1] || '').toLowerCase().replace(/^www\./, '');
+      if (!href) href = urlFromMarkup(card, citeHost);
       let approx = false;
       if (!href) {
-        const c = textOf(card.querySelector('cite, [data-dtld]'), 300) || '';
-        const m = c.match(/^(https?:\/\/[^\s›]+)((?:\s*›\s*[^\s›]+)*)/);
-        if (m && !/\.\.\./.test(m[2])) { href = m[1].replace(/\/$/, '') + m[2].split('›').map(x => x.trim()).filter(Boolean).map(x => '/' + x).join(''); approx = true; }
+        const m = citeRaw.match(/^(https?:\/\/[^\s›]+)((?:\s*›\s*[^\s›]+)*)/);
+        if (m) {
+          const segs = m[2].split('›').map(x => x.trim()).filter(x => x && !/[….]{1,3}$/.test(x) && !/^[….]+$/.test(x));
+          href = m[1].replace(/\/$/, '') + segs.map(x => '/' + x).join('');
+          approx = true;
+        }
       }
       if (!href) { rejects.push({ title, why: 'no external url' }); continue; }
       if (seenUrls.has(href)) { rejects.push({ title, why: 'duplicate' }); continue; }
 
-      const citeText = textOf(card.querySelector('cite, [data-dtld]'), 300) || '';
+      const citeText = citeRaw;
       let snippet = textOf(card.querySelector('div[data-sncf], [data-sncf], .VwiC3b, .yXK7lf, .MUxGbd, [class*="snippet"], [class*="description"]'), 700) || '';
       snippet = cleanSnippet(snippet, title, citeText);
       if (snippet.length < 40) {
@@ -1579,6 +1610,7 @@ try {
       if (qText && qText.length >= 2 && qText.length <= 40 && qText.toLowerCase() !== rawQuery && !relatedQueries.includes(qText)) {
         // 过滤系统功能链接与噪音
         if (/反馈|投诉|举报|免责|帮助|纠错|声明|广告/i.test(qText)) continue;
+        if (/^\d+$/.test(qText) || /^(Weiter|Next|Zurück|Vorherige|Previous|Mehr)$/i.test(qText)) continue;
         relatedQueries.push(qText);
         if (relatedQueries.length >= 6) break;
       }
@@ -2191,7 +2223,7 @@ def _search_locked(browser, args):
 
         formatted_results = "\n\n".join(
             f"{index}. {item.get('title') or 'Untitled'}\n"
-            f"   {item.get('url')}\n\n"
+            f"   {item.get('url')}{'  (URL ggf. gekürzt)' if item.get('approx_url') else ''}\n\n"
             f"   {item.get('snippet') or 'Keine Beschreibung verfügbar.'}"
             for index, item in enumerate(results, 1)
             if item.get("url")
