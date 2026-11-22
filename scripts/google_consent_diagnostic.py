@@ -12,7 +12,7 @@ from pathlib import Path
 
 
 DIAGNOSTIC_JS = r"""
-const clean = (value, max = 500) => String(value || '').replace(/\\s+/g, ' ').trim().slice(0, max);
+const clean = (value, max = 500) => String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
 const visible = (element) => {
   const style = getComputedStyle(element);
   const rect = element.getBoundingClientRect();
