@@ -405,6 +405,24 @@ export default {
           const env = { ...buildBrowserEnv(), DP_DEFAULT_ENGINE: engine };
           const args = ["search", query, "--engine", engine, "--no-fallback", "--limit", String(limit)];
           const response = await runPythonScript(py, args, { env, signal, scriptPath: BROWSER_USE_SCRIPT_PATH });
+          const googleBlocked = engine === "google" &&
+            response?.attempts?.some((attempt) => attempt.engine === "google" && attempt.kind === "blocked");
+          if (googleBlocked) {
+            try {
+              const diagnostic = await runPythonScript(py, [], {
+                env,
+                signal,
+                timeout: 15000,
+                scriptPath: join(PLUGIN_DIR, "scripts", "google_consent_diagnostic.py")
+              });
+              response.google_consent_diagnostic = diagnostic?.diagnostic ?? diagnostic;
+            } catch (diagnosticError) {
+              response.google_consent_diagnostic = {
+                ok: false,
+                error: String(diagnosticError?.message ?? diagnosticError)
+              };
+            }
+          }
           if (!response?.ok) return response;
           recordActivity();
           return response;
