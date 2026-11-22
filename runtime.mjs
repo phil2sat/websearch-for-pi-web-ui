@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { isIP } from "node:net";
+import { createConnection, isIP } from "node:net";
 import { lookup } from "node:dns/promises";
 
 const execFileAsync = promisify(execFile);
@@ -76,6 +76,23 @@ async function waitForBrowser() {
     await delay(250);
   }
   throw new Error("DrissionPage started but Chromium CDP did not become ready on port " + DEFAULT_BROWSER_PORT + ": " + lastError);
+}
+
+function checkPortAlive(port = DEFAULT_BROWSER_PORT, timeoutMs = 1500) {
+  return new Promise((resolve) => {
+    const socket = createConnection({ port, host: "127.0.0.1" });
+    let settled = false;
+    const finish = (alive) => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolve(alive);
+    };
+    socket.setTimeout(timeoutMs);
+    socket.once("connect", () => finish(true));
+    socket.once("timeout", () => finish(false));
+    socket.once("error", () => finish(false));
+  });
 }
 
 function isPrivateAddress(hostname) {
@@ -177,8 +194,7 @@ class CdpConnection {
       if (message.error) pending.reject(new Error(message.error.message ?? "CDP command failed."));
       else pending.resolve(message.result ?? {});
     });
-    socket.addEventListener("close", () => {
-      for (const pending of this.pending.values()) {
+    socket.addEventListener("close", () => {      for (const pending of this.pending.values()) {
         clearTimeout(pending.timer);
         pending.reject(new Error("Chromium CDP connection closed."));
       }
@@ -297,6 +313,47 @@ export default {
     let stderrTail = "";
     let starting = null;
     let disposed = false;
+    let bgTaskHandle = null;
+
+    function syncBackgroundTask() {
+      const label = "Chromium Web Search (headless)";
+      const status = "Port " + DEFAULT_BROWSER_PORT + " · Running";
+      if (!bgTaskHandle) {
+        bgTaskHandle = host.registerBackgroundTask?.({
+          id: "websearch-chromium",
+          label,
+          status,
+          intervalMs: 3000,
+          maxFailures: 2,
+          check: async () => checkPortAlive(DEFAULT_BROWSER_PORT),
+          onDead: () => {
+            browserStarted = false;
+            bgTaskHandle = null;
+            host.log?.("warn", "Web Search Chromium is no longer reachable; background task removed.");
+          },
+          stop: async () => {
+            await stopBrowser();
+          }
+        });
+      } else {
+        bgTaskHandle.update?.({ label, status });
+      }
+    }
+
+    function removeBackgroundTask() {
+      try { bgTaskHandle?.unregister?.(); } catch {}
+      bgTaskHandle = null;
+    }
+
+    async function stopBrowser() {
+      removeBackgroundTask();
+      if (!browserStarted) return;
+      try {
+        await runBrowserScript("quit", profileDir);
+      } finally {
+        browserStarted = false;
+      }
+    }
 
     async function startBrowser() {
       if (disposed) throw new Error("The websearch plugin is deactivated.");
@@ -308,6 +365,7 @@ export default {
         await waitForBrowser();
         cdpPort = DEFAULT_BROWSER_PORT;
         browserStarted = true;
+        syncBackgroundTask();
       })();
       try { await starting; } finally { starting = null; }
     }
@@ -357,8 +415,7 @@ export default {
         try {
           await fetch(`http://127.0.0.1:${cdpPort}/json/close/${target.id}`);
         } catch {}
-      }
-    }
+      }    }
 
     async function evaluate(cdp, expression) {
       const result = await cdp.command("Runtime.evaluate", {
@@ -452,6 +509,9 @@ export default {
       async execute() {
         try {
           await startBrowser();
+          const running = await checkPortAlive(cdpPort);
+          if (!running) throw new Error("Chromium CDP port is not accepting connections.");
+          syncBackgroundTask();
           return { ok: true, running: true, browser: "DrissionPage Chromium", cdpPort, profileDir, headless: true };
         } catch (error) {
           return { ok: false, running: false, error: String(error?.message ?? error), profileDir };
@@ -467,11 +527,8 @@ export default {
           unregister?.();
         } catch {}
       }
-      if (browserStarted) {
-        try { await runBrowserScript("quit", profileDir); }
-        catch (error) { host.log?.("warn", "Chromium shutdown failed: " + String(error?.message ?? error)); }
-        browserStarted = false;
-      }
+      try { await stopBrowser(); }
+      catch (error) { host.log?.("warn", "Chromium shutdown failed: " + String(error?.message ?? error)); }
       cdpPort = DEFAULT_BROWSER_PORT;
     };
   }
