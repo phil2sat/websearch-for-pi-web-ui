@@ -26,7 +26,7 @@ Alternatively, clone it into `<dataDir>/plugins/websearch` and reload plugins.
 
 ### `search_web`
 
-Searches only the selected engine. Google is the default; blocked or empty results are reported without silently switching engines. The agent receives plain text only: numbered title, original result URL, and page description/snippet. The **Debug output** plugin setting switches between plain-text results (default) and complete JSON diagnostics, including engine responses, attempts, and parser details.
+Searches only the selected engine. Google is the default; blocked or empty results are reported without silently switching engines. The **Debug output** plugin setting selects between two separate Python backend generation paths. Disabled (default) generates numbered title, original result URL, and page description/snippet as plain text. Enabled generates a JSON diagnostics object directly from the search execution, including engine responses, attempts, parser details, and extracted results. JSON mode does not wrap or reconstruct the plain-text output.
 
 Parameters:
 - `query` (required)
