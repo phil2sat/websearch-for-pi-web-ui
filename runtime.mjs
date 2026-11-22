@@ -263,14 +263,14 @@ export default {
     let stderrTail = "";
 
     try {
-      const stored = host.storage?.get?.("settings");
-      if (typeof stored?.idleTimeoutMinutes === "number") {
+      const stored = host.getSettings?.() ?? {};
+      if (typeof stored.idleTimeoutMinutes === "number") {
         idleTimeoutMinutes = Math.max(0, Math.floor(stored.idleTimeoutMinutes));
       }
-      if (typeof stored?.headless === "boolean") {
+      if (typeof stored.headless === "boolean") {
         headlessMode = stored.headless;
       }
-      if (typeof stored?.debugOutput === "boolean") {
+      if (typeof stored.debugOutput === "boolean") {
         debugOutput = stored.debugOutput;
       }
     } catch {}
@@ -442,11 +442,16 @@ export default {
           if (signal?.aborted) throw new Error("Search cancelled.");
           await startBrowser();
           const py = resolvePython();
-          const env = { ...buildBrowserEnv(), DP_DEFAULT_ENGINE: engine, DP_SEARCH_DEBUG: debugOutput ? "1" : "0" };
+          const currentSettings = host.getSettings?.() ?? {};
+          const useDebugOutput = typeof currentSettings.debugOutput === "boolean"
+            ? currentSettings.debugOutput
+            : debugOutput;
+          debugOutput = useDebugOutput;
+          const env = { ...buildBrowserEnv(), DP_DEFAULT_ENGINE: engine, DP_SEARCH_DEBUG: useDebugOutput ? "1" : "0" };
           const args = ["search", query, "--engine", engine, "--no-fallback", "--limit", String(limit)];
           const response = await runPythonScript(py, args, { env, timeout: 150000, scriptPath: BROWSER_USE_SCRIPT_PATH });
           recordActivity();
-          return debugOutput ? JSON.stringify(response, null, 2) : formatSearchText(response, query, engine);
+          return useDebugOutput ? JSON.stringify(response, null, 2) : formatSearchText(response, query, engine);
         } catch (error) {
           return `Suche fehlgeschlagen: ${String(error?.message ?? error)}`;
         }
