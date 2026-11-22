@@ -73,6 +73,36 @@ return JSON.stringify({
 """
 
 
+CONSENT_CLICK_JS = r"""
+const nodes = Array.from(document.querySelectorAll(
+  '#L2AGLb, button, [role="button"], input[type="submit"], input[type="button"]'
+));
+const candidates = nodes.map((element) => {
+  const label = String(
+    element.innerText || element.textContent || element.value ||
+    element.getAttribute('aria-label') || element.getAttribute('title') || ''
+  ).replace(/\\s+/g, ' ').trim();
+  return { element, label, id: element.id || null, disabled: !!element.disabled };
+});
+const target = candidates.find((item) =>
+  item.id === 'L2AGLb' ||
+  /^(accept all|alle akzeptieren|i agree|agree|akzeptieren|zustimmen|ich stimme zu)$/i.test(item.label)
+);
+if (!target) {
+  return JSON.stringify({
+    clicked: false,
+    reason: 'No known positive consent action was found.',
+    candidates: candidates.map(({ label, id, disabled }) => ({ label, id, disabled }))
+  });
+}
+if (target.disabled) {
+  return JSON.stringify({ clicked: false, reason: 'Consent action is disabled.', label: target.label, id: target.id });
+}
+target.element.click();
+return JSON.stringify({ clicked: true, label: target.label, id: target.id });
+""";
+
+
 def main():
     from DrissionPage import Chromium, ChromiumOptions
 
@@ -85,7 +115,24 @@ def main():
 
     tab = browser.latest_tab
     raw = tab.run_js(DIAGNOSTIC_JS)
-    data = json.loads(raw) if isinstance(raw, str) else raw
+    before = json.loads(raw) if isinstance(raw, str) else raw
+
+    click_raw = tab.run_js(CONSENT_CLICK_JS)
+    click_result = json.loads(click_raw) if isinstance(click_raw, str) else click_raw
+    if click_result.get("clicked"):
+        try:
+            tab.wait.doc_loaded(timeout=8)
+        except Exception:
+            pass
+        time.sleep(1.0)
+
+    after_raw = tab.run_js(DIAGNOSTIC_JS)
+    after = json.loads(after_raw) if isinstance(after_raw, str) else after_raw
+    data = {
+        "before": before,
+        "consentClick": click_result,
+        "after": after
+    }
 
     screenshot_path = None
     user_data = os.environ.get("DP_USER_DATA", "").strip()
