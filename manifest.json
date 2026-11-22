@@ -34,11 +34,11 @@
     {
       "key": "debugOutput",
       "type": "boolean",
-      "label": "Debug output",
-      "labelEn": "Debug output",
+      "label": "JSON output",
+      "labelEn": "JSON output",
       "default": false,
-      "hint": "Off: plain-text search results. On: complete JSON with engine responses, attempts, parser diagnostics, and debug details.",
-      "hintEn": "Off: plain-text search results. On: complete JSON with engine responses, attempts, parser diagnostics, and debug details."
+      "hint": "Off: use the independent plain-text generator from version 0.1.35. On: use the independent JSON generator from version 0.1.33. The generated output is returned unchanged; no format conversion is performed.",
+      "hintEn": "Off: use the independent plain-text generator from version 0.1.35. On: use the independent JSON generator from version 0.1.33. The generated output is returned unchanged; no format conversion is performed."
     }
   ]
 }
