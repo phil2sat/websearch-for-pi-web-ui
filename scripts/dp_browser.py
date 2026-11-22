@@ -1245,9 +1245,9 @@ try {
       href = resolved.href;
 
       // 1. Google redirect URLs, including regional domains such as google.de.
-      if (/^\\/url\\/?$/.test(resolved.pathname) && /(^|\\.)google\\./i.test(resolved.hostname)) {
+      if (/^\/url\/?$/.test(resolved.pathname) && /(^|\.)google\./i.test(resolved.hostname)) {
         const target = resolved.searchParams.get('url') || resolved.searchParams.get('q');
-        if (target && /^https?:\\/\\//i.test(target)) return target;
+        if (target && /^https?:\/\//i.test(target)) return target;
       }
       // 2. DuckDuckGo 跳转解码
       if (href.includes('uddg=')) {
@@ -1467,7 +1467,7 @@ try {
       const linkEl = card.querySelector('h3 a[href], a[href]');
       if (!linkEl) continue;
       const href = cleanUrl(linkEl.getAttribute('href'), card);
-      if (!href || !/^https?:\\/\\//i.test(href) || /(^|\\.)google\\.[a-z.]+\\//i.test(href) || seenUrls.has(href)) continue;
+      if (!href || !/^https?:\/\//i.test(href) || /(^|\.)google\.[a-z.]+\//i.test(href) || seenUrls.has(href)) continue;
       seenUrls.add(href);
 
       const titleEl = card.querySelector('h3') || linkEl;
@@ -1491,7 +1491,7 @@ try {
       if (linkEl.closest('nav, header, footer, aside, form, .nav, .menu')) continue;
       if (isAdCard(linkEl)) continue;
       const href = cleanUrl(linkEl.getAttribute('href'), linkEl.parentElement);
-      if (!href || !/^https?:\\/\\//i.test(href) || /(^|\\.)google\\.[a-z.]+\\//i.test(href) || seenUrls.has(href)) continue;
+      if (!href || !/^https?:\/\//i.test(href) || /(^|\.)google\.[a-z.]+\//i.test(href) || seenUrls.has(href)) continue;
 
       const title = textOf(linkEl, 150);
       if (!title || title.length < 3) continue;
