@@ -2404,9 +2404,9 @@ def _search_locked(browser, args):
 
         if output_mode == "json":
             # Preserve the original 0.1.29 JSON generator, including its complete payload.
-            formatted_results = "\\n\\n".join(
-                f"{index}. {item.get('title') or 'Untitled'}{(' — ' + item['site']) if item.get('redirect') and item.get('site') else ''}\\n"
-                f"   {item.get('url')}{'  (URL ggf. gekürzt)' if item.get('approx_url') else ''}\\n\\n"
+            formatted_results = "\n\n".join(
+                f"{index}. {item.get('title') or 'Untitled'}{(' — ' + item['site']) if item.get('redirect') and item.get('site') else ''}\n"
+                f"   {item.get('url')}{'  (URL ggf. gekürzt)' if item.get('approx_url') else ''}\n\n"
                 f"   {item.get('snippet') or 'Keine Beschreibung verfügbar.'}"
                 for index, item in enumerate(results, 1)
                 if item.get("url")
@@ -2417,7 +2417,7 @@ def _search_locked(browser, args):
                 if item.get("approx_url")
             ]
             if diag:
-                formatted_results += "\\n\\nDiagnose (URL nur gekürzt gefunden, bitte diesen Block weitergeben):\\n" + "\\n".join(diag)
+                formatted_results += "\n\nDiagnose (URL nur gekürzt gefunden, bitte diesen Block weitergeben):\n" + "\n".join(diag)
 
             out(
                 {
@@ -2439,14 +2439,14 @@ def _search_locked(browser, args):
             )
 
         # Preserve the independent 0.1.35 plain-text generator.
-        formatted_results = "\\n\\n".join(
-            f"{index}. {item.get('title') or 'Untitled'}\\n"
-            f"{item.get('url')}\\n\\n"
+        formatted_results = "\n\n".join(
+            f"{index}. {item.get('title') or 'Untitled'}\n"
+            f"{item.get('url')}\n\n"
             f"{item.get('snippet') or 'Keine Beschreibung verfügbar.'}"
             for index, item in enumerate(results, 1)
             if item.get("url")
         )
-        sys.stdout.write(formatted_results + "\\n")
+        sys.stdout.write(formatted_results + "\n")
         sys.exit(0)
 
     if output_mode == "json":
@@ -2471,7 +2471,7 @@ def _search_locked(browser, args):
         )
 
     # Preserve the independent 0.1.35 plain-text no-results output.
-    sys.stdout.write(_format_no_results(query, attempts) + "\\n")
+    sys.stdout.write(_format_no_results(query, attempts) + "\n")
     sys.exit(0)
 
 
