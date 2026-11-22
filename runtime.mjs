@@ -41,6 +41,7 @@ function toolResult(text) {
 }
 
 function formatSearchText(response, query, engine) {
+  if (typeof response?.raw === "string") return response.raw.trim();
   if (!response?.ok) return `Suche fehlgeschlagen: ${response?.error ?? "unbekannter Fehler"}`;
 
   const results = Array.isArray(response.results) ? response.results : [];
