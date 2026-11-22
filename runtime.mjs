@@ -28,6 +28,7 @@ const ENGINE_GUIDANCE = [
 const MAX_TEXT = 18000;
 const NAV_TIMEOUT_MS = 18000;
 const CDP_TIMEOUT_MS = 12000;
+const CHROMIUM_STARTUP_TIMEOUT_MS = 60000;
 
 function clip(value, max = MAX_TEXT) {
   const text = String(value ?? "");
@@ -341,7 +342,7 @@ export default {
           child = null;
           cdpPort = 0;
         });
-        const deadline = Date.now() + 20000;
+        const deadline = Date.now() + CHROMIUM_STARTUP_TIMEOUT_MS;
         while (Date.now() < deadline) {
           if (!child || child.exitCode !== null) {
             throw new Error(`Chromium exited during startup. ${stderrTail.slice(-1200)}`);
@@ -357,7 +358,7 @@ export default {
           } catch {}
           await delay(200);
         }
-        throw new Error(`Timed out waiting for Chromium DevToolsActivePort. ${stderrTail.slice(-1200)}`);
+        throw new Error(`Timed out after ${CHROMIUM_STARTUP_TIMEOUT_MS / 1000}s waiting for Chromium DevToolsActivePort. ${stderrTail.slice(-1200)}`);
       })();
       try {
         await starting;
