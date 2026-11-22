@@ -420,7 +420,7 @@ export default {
     const offSearch = host.registerAgentTool({
       name: "search_web",
       label: "Web Search",
-      description: "Search the public web using locally managed headless Chromium. Google is the default. Select Baidu or Sogou for Chinese-language sources, Naver for Korean, Yahoo Japan for Japanese, and Yandex for Russian. Returns plain text only: title, original result URL, and page description. Never returns a JSON wrapper. No search API is used.",
+      description: "Search the public web using locally managed headless Chromium. Google is the default. Select Baidu or Sogou for Chinese-language sources, Naver for Korean, Yahoo Japan for Japanese, and Yandex for Russian. Returns plain-text results by default. When Debug output is enabled in plugin settings, returns complete JSON diagnostics including engine responses and parser details. No search API is used.",
       promptSnippet: "search the public web through local headless Chromium and present each result as a link followed by its description",
       promptGuidelines: ENGINE_GUIDANCE,
       parameters: {
