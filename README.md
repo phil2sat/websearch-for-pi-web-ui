@@ -30,7 +30,7 @@ Searches only the selected engine. Google is the default; blocked or empty resul
 
 Parameters:
 - `query` (required)
-- `engine` (optional): `bing` (default), `google`, `duckduckgo`, `baidu`, `sogou`, `yandex`, `naver`, `yahoo_japan`
+- `engine` (optional): `google` (default), `bing`, `duckduckgo`, `baidu`, `sogou`, `so`, `brave`, `yahoo`
 - `limit` (optional, 1–20; default 10)
 
 ### `read_url`
