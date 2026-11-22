@@ -75,9 +75,9 @@ Search-engine HTML changes over time. The extractor uses engine-specific selecto
 
 Search execution, result extraction, engine-specific selectors, and browser connection use the vendored `scripts/dp_browser.py` implementation from `pi-web-ui` `browser_use` (reference revision `33c3f6c2d49f9f0a3c437df3bfe5e41d09bba355`). Google is the default. The selected engine is passed explicitly with `--no-fallback`, so the plugin never silently switches search engines. The browser lifecycle invokes the same script's `tabs` and `quit` commands; `search_web` invokes `search`, and `read_url` invokes `read_page`. These operations use the upstream browser-control implementation.
 
-### Debug output setting fix (0.1.37)
+### Debug output setting synchronization
 
-The `debugOutput` setting is read through the plugin settings API (`host.getSettings()`), not the plugin storage API. The current value is refreshed for every search invocation, so switching the setting reliably changes the output mode without relying on stale in-memory state.
+The `debugOutput` setting is initialized from `host.getSettings()` during activation and updated through `host.onSettingsChanged()`. Search execution uses this synchronized runtime value; it does not re-read a potentially stale settings snapshot for each invocation.
 
 
 ### Output mode behavior (0.1.39)
@@ -88,3 +88,8 @@ The **Debug output** setting selects the backend generation path before search r
 - `json`: the Python backend emits a structured diagnostics object directly from the search execution, preserving engine response data, attempts, fallback information, parser diagnostics, and extracted results as used by version 0.1.33.
 
 These are separate generation and output paths. JSON mode does not serialize, wrap, or reconstruct the plain-text output. The runtime returns the JSON payload as JSON text without changing its structure.
+
+
+### Runtime update (0.1.40)
+
+Version 0.1.40 includes the runtime setting-synchronization fix in an explicitly versioned plugin release. During search execution, the runtime logs the selected output mode as `[websearch] search output mode selected`, including `debugOutput` and `outputMode`. With Debug output enabled, the Python backend is invoked with `--output json`; with it disabled, it is invoked with `--output text`.
