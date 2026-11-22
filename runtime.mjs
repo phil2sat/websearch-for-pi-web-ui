@@ -404,41 +404,7 @@ export default {
           const py = resolvePython();
           const env = { ...buildBrowserEnv(), DP_DEFAULT_ENGINE: engine };
           const args = ["search", query, "--engine", engine, "--no-fallback", "--limit", String(limit)];
-          let response = await runPythonScript(py, args, { env, signal, scriptPath: BROWSER_USE_SCRIPT_PATH });
-          const googleBlocked = engine === "google" &&
-            response?.attempts?.some((attempt) => attempt.engine === "google" && attempt.kind === "blocked");
-          if (googleBlocked) {
-            try {
-              const diagnostic = await runPythonScript(py, [], {
-                env,
-                signal,
-                timeout: 15000,
-                scriptPath: join(PLUGIN_DIR, "scripts", "google_consent_diagnostic.py")
-              });
-              response.google_consent_diagnostic = diagnostic?.diagnostic ?? diagnostic;
-              const details = response.google_consent_diagnostic;
-              const after = details?.after;
-              const consentCleared = details?.consentClick?.clicked === true &&
-                typeof after?.url === "string" &&
-                !/consent\.google\.com|\/consent(?:\/|\?|$)/i.test(after.url) &&
-                after?.consentSignals?.knownButtonId !== true &&
-                after?.consentSignals?.consentHost !== true;
-              if (consentCleared) {
-                const retried = await runPythonScript(py, args, {
-                  env,
-                  signal,
-                  scriptPath: BROWSER_USE_SCRIPT_PATH
-                });
-                retried.google_consent_diagnostic = details;
-                response = retried;
-              }
-            } catch (diagnosticError) {
-              response.google_consent_diagnostic = {
-                ok: false,
-                error: String(diagnosticError?.message ?? diagnosticError)
-              };
-            }
-          }
+          const response = await runPythonScript(py, args, { env, signal, scriptPath: BROWSER_USE_SCRIPT_PATH });
           if (!response?.ok) return response;
           recordActivity();
           return response;
