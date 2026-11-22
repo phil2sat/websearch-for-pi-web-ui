@@ -56,6 +56,7 @@ The plugin launches `mcp-server.mjs` with Node.js and connects over stdio JSON-R
 - Search and read operations use isolated tabs and close them after extraction.
 - The MCP child process and Chromium process are stopped when the plugin is deactivated.
 - Chromium stderr is retained only as a short diagnostic tail; page content is returned as bounded text.
+- Browser requests are intercepted through CDP; non-HTTP(S), local, and DNS-resolved private network destinations are blocked.
 - CAPTCHA / bot-check pages are reported as blocked; the plugin does not claim they are search results.
 
 ## Notes
