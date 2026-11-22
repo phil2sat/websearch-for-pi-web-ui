@@ -9,7 +9,6 @@ import { lookup } from "node:dns/promises";
 
 const execAsync = promisify(exec);
 const PLUGIN_DIR = fileURLToPath(new URL(".", import.meta.url));
-const BOOTSTRAP_PATH = join(PLUGIN_DIR, "browser-bootstrap.py");
 const BROWSER_USE_SCRIPT_PATH = join(PLUGIN_DIR, "scripts", "dp_browser.py");
 const DEFAULT_BROWSER_PORT = 9333;
 const DEFAULT_BROWSER_TIMEOUT_MS = 60000;
@@ -56,7 +55,7 @@ function decode(buf) {
   }
 }
 
-function runPythonScript(pyExecutable, scriptArgs, { env = {}, timeout = DEFAULT_BROWSER_TIMEOUT_MS, signal, scriptPath = BOOTSTRAP_PATH } = {}) {
+function runPythonScript(pyExecutable, scriptArgs, { env = {}, timeout = DEFAULT_BROWSER_TIMEOUT_MS, signal, scriptPath = BROWSER_USE_SCRIPT_PATH } = {}) {
   return new Promise((resolve, reject) => {
     const childEnv = {
       ...process.env,
@@ -450,7 +449,7 @@ export default {
       try {
         const py = resolvePython();
         const env = buildBrowserEnv();
-        await runPythonScript(py, ["quit"], { env, timeout: 5000 });
+        await runPythonScript(py, ["quit"], { env, timeout: 5000, scriptPath: BROWSER_USE_SCRIPT_PATH });
       } catch {}
 
       const stillAlive = await checkPortAlive(DEFAULT_BROWSER_PORT, 600);
@@ -516,7 +515,7 @@ export default {
       starting = (async () => {
         const py = resolvePython();
         const env = buildBrowserEnv();
-        const response = await runPythonScript(py, ["start"], { env });
+        const response = await runPythonScript(py, ["tabs"], { env, scriptPath: BROWSER_USE_SCRIPT_PATH });
         if (!response?.ok) {
           throw new Error(response?.error || "DrissionPage could not start Chromium.");
         }
