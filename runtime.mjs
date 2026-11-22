@@ -558,23 +558,61 @@ export default {
           });
         });
         await cdp.command("Fetch.enable", { patterns: [{ urlPattern: "*", requestStage: "Request" }] });
+        let loadEventReceived = false;
+        let resolveLoadEvent;
+        const loadEvent = new Promise((resolve) => {
+          resolveLoadEvent = resolve;
+        });
+        const offLoadEvent = cdp.on("Page.loadEventFired", () => {
+          loadEventReceived = true;
+          resolveLoadEvent();
+        });
+
         const navigation = await cdp.command("Page.navigate", { url }, NAV_TIMEOUT_MS);
-        if (navigation.errorText) throw new Error(navigation.errorText);
+        if (navigation.errorText) {
+          offLoadEvent();
+          throw new Error(navigation.errorText);
+        }
+
         const deadline = Date.now() + NAV_TIMEOUT_MS;
-        let ready = false;
+        let pageState = null;
         while (Date.now() < deadline) {
-          const result = await cdp.command("Runtime.evaluate", {
-            expression: "document.readyState",
+          const evaluated = await cdp.command("Runtime.evaluate", {
+            expression: "({ href: location.href, readyState: document.readyState, title: document.title, bodyTextLength: document.body?.innerText?.length || 0 })",
             returnByValue: true
           });
-          if (["interactive", "complete"].includes(result.result?.value)) {
-            ready = true;
+          pageState = evaluated.result?.value ?? null;
+
+          if (
+            pageState &&
+            pageState.href !== "about:blank" &&
+            ["interactive", "complete"].includes(pageState.readyState)
+          ) {
             break;
           }
-          await delay(250);
+          await delay(200);
         }
-        if (!ready) await delay(1000);
-        await delay(700);
+
+        if (!pageState || pageState.href === "about:blank" || !["interactive", "complete"].includes(pageState.readyState)) {
+          offLoadEvent();
+          throw new Error("Chromium did not commit the requested navigation. Current page: " + JSON.stringify(pageState));
+        }
+
+        if (!loadEventReceived) {
+          await Promise.race([loadEvent, delay(Math.min(5000, Math.max(0, deadline - Date.now())))]);
+        }
+        offLoadEvent();
+        await delay(500);
+
+        const finalState = await cdp.command("Runtime.evaluate", {
+          expression: "({ href: location.href, readyState: document.readyState, title: document.title, bodyTextLength: document.body?.innerText?.length || 0 })",
+          returnByValue: true
+        });
+        const finalPageState = finalState.result?.value ?? pageState;
+        if (finalPageState.href === "about:blank") {
+          throw new Error("Chromium remained on about:blank after navigation.");
+        }
+
         const result = await operation(cdp);
         recordActivity();
         return result;
