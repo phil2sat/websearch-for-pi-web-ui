@@ -1,8 +1,8 @@
 # Local Chromium Web Search for pi-web-ui
 
-A dependency-free pi-web-ui plugin that supervises a local stdio MCP server and a locally launched headless Chromium. Google is the default engine; the model can explicitly select Baidu, Bing, DuckDuckGo, Sogou, Yandex, Naver, or Yahoo Japan.
+A pi-web-ui plugin that supervises a local stdio MCP server and a locally launched headless Chromium. Google is the default engine; the model can explicitly select Baidu, Bing, DuckDuckGo, Sogou, Yandex, Naver, or Yahoo Japan.
 
-No hosted search API, API key, external MCP service, Playwright install, or manually managed process is required. The plugin starts the MCP child process, proxies its tools into pi-web-ui, and the MCP runtime starts and manages Chromium on the first browser request.
+No hosted search API, API key, external MCP service, Playwright install, or manually managed browser process is required. The plugin starts the MCP child process, proxies its tools into pi-web-ui, and the MCP runtime starts and manages Chromium on the first browser request.
 
 ## Requirements
 
@@ -43,7 +43,7 @@ Opens a public HTTP(S) page in Chromium and returns its title, final URL, and re
 
 ### `browser_status`
 
-Reports whether Chromium is running, its executable, profile directory, and CDP readiness. It starts Chromium lazily if needed.
+Reports whether Chromium is running, its DrissionPage-managed port, profile directory, and CDP readiness. It starts Chromium lazily if needed.
 
 ## MCP integration
 
@@ -56,7 +56,7 @@ The plugin launches `mcp-server.mjs` with Node.js and connects over stdio JSON-R
 - The browser profile is persistent under `<dataDir>/browser-use-chrome-data`, matching pi-web-ui `browser_use`.
 - `DP_BROWSER_PORT`, `DP_USER_DATA`, and `DP_HEADLESS` are passed to the bootstrap process using the same environment contract as `browser_use`.
 - Chromium is not spawned or discovered directly by the Node.js runtime; DrissionPage owns startup and shutdown.
-- Search and read operations use isolated tabs and close them after extraction.
+- Search and read operations use isolated CDP tabs and close them after extraction; Chromium itself is started and stopped through the DrissionPage bootstrap.
 - The MCP child process and Chromium process are stopped when the plugin is deactivated.
 - Chromium stderr is retained only as a short diagnostic tail; page content is returned as bounded text.
 - Browser requests are intercepted through CDP; non-HTTP(S), local, and DNS-resolved private network destinations are blocked.
