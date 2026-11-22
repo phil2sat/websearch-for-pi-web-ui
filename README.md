@@ -26,7 +26,12 @@ Alternatively, clone it into `<dataDir>/plugins/websearch` and reload plugins.
 
 ### `search_web`
 
-Searches only the selected engine. Google is the default; blocked or empty results are reported without silently switching engines. The **Debug output** plugin setting selects between two separate Python backend generation paths. Disabled (default) generates numbered title, original result URL, and page description/snippet as plain text. Enabled generates a JSON diagnostics object directly from the search execution, including engine responses, attempts, parser details, and extracted results. JSON mode does not wrap or reconstruct the plain-text output.
+Searches only the selected engine. Google is the default; blocked or empty results are reported without silently switching engines. The **JSON output** plugin setting selects one of two independent search generators:
+
+- **Off — version 0.1.35 generator:** the Python backend generates numbered titles, original result URLs, and page descriptions/snippets as plain text.
+- **On — version 0.1.33 generator:** the Python backend generates the structured JSON search result, including engine response data, attempts, fallback information, parser diagnostics, and extracted results.
+
+The runtime returns the selected generator's stdout unchanged. It does not parse and re-serialize JSON, wrap text in JSON, or format JSON as plain text.
 
 Parameters:
 - `query` (required)
@@ -80,16 +85,3 @@ Search execution, result extraction, engine-specific selectors, and browser conn
 The `debugOutput` setting is initialized from `host.getSettings()` during activation and updated through `host.onSettingsChanged()`. Search execution uses this synchronized runtime value; it does not re-read a potentially stale settings snapshot for each invocation.
 
 
-### Output mode behavior (0.1.39)
-
-The **Debug output** setting selects the backend generation path before search results are emitted. The runtime passes `--output text` or `--output json` to `scripts/dp_browser.py` for every search invocation.
-
-- `text`: the Python backend generates the formatted title, original URL, and snippet output used by version 0.1.35.
-- `json`: the Python backend emits a structured diagnostics object directly from the search execution, preserving engine response data, attempts, fallback information, parser diagnostics, and extracted results as used by version 0.1.33.
-
-These are separate generation and output paths. JSON mode does not serialize, wrap, or reconstruct the plain-text output. The runtime returns the JSON payload as JSON text without changing its structure.
-
-
-### Runtime update (0.1.40)
-
-Version 0.1.40 includes the runtime setting-synchronization fix in an explicitly versioned plugin release. During search execution, the runtime logs the selected output mode as `[websearch] search output mode selected`, including `debugOutput` and `outputMode`. With Debug output enabled, the Python backend is invoked with `--output json`; with it disabled, it is invoked with `--output text`.
