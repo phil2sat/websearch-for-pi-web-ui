@@ -2053,11 +2053,29 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 _GOOGLE_HOST_RE = re.compile(r"^https?://([^/]*\.)?(google|gstatic)\.[a-z.]+(/|$)", re.I)
 
 
+def _body_target(body):
+    """Extract a redirect target from a 200 interstitial page."""
+    body = body.replace("\\/", "/").replace("&amp;", "&")
+    body = re.sub(r"\\x([0-9a-fA-F]{2})", lambda m: chr(int(m.group(1), 16)), body)
+    body = re.sub(r"\\u([0-9a-fA-F]{4})", lambda m: chr(int(m.group(1), 16)), body)
+    for pat in (
+        r'http-equiv=["\']refresh["\'][^>]*url=([^"\'>\s]+)',
+        r'location(?:\.href|\.replace\()?\s*=?\s*\(?["\'](https?://[^"\']+)',
+        r'<a[^>]+href=["\'](https?://[^"\']+)',
+    ):
+        m = re.search(pat, body, re.I)
+        if m and not _GOOGLE_HOST_RE.match(m.group(1)):
+            return m.group(1)
+    return ""
+
+
 def _resolve_one_goto(goto, user_agent, cookie_header, referer, timeout):
     """Follow Google's /goto redirect with plain GETs (no browser tab, no page load).
-    Only the Location headers are read; the target site is never contacted."""
+    Only Location headers / interstitial bodies are read; the target site is never contacted.
+    Returns (final_url, debug_text)."""
     opener = urllib.request.build_opener(_NoRedirect)
     url = goto
+    trace = []
     for _ in range(4):
         headers = {
             "User-Agent": user_agent,
@@ -2072,27 +2090,30 @@ def _resolve_one_goto(goto, user_agent, cookie_header, referer, timeout):
         try:
             resp = opener.open(urllib.request.Request(url, headers=headers), timeout=timeout)
             body = resp.read(65536).decode("utf-8", "replace")
-            m = re.search(r'http-equiv=["\']refresh["\'][^>]*url=([^"\'>\s]+)', body, re.I)
-            location = m.group(1) if m else ""
+            location = _body_target(body)
+            trace.append(f"HTTP {resp.status} body-target={location[:120] or 'none'} body={re.sub(chr(10), ' ', body)[:120]!r}")
         except urllib.error.HTTPError as e:
+            loc = e.headers.get("Location", "")
+            trace.append(f"HTTP {e.code} Location={loc[:160] or 'none'}")
             if e.code in (301, 302, 303, 307, 308):
-                location = e.headers.get("Location", "")
+                location = loc
             else:
-                return ""
-        except Exception:
-            return ""
+                return "", " > ".join(trace)
+        except Exception as e:
+            trace.append(f"{type(e).__name__}: {str(e)[:100]}")
+            return "", " > ".join(trace)
         if not location:
-            return ""
+            return "", " > ".join(trace)
         nxt = urllib.parse.urljoin(url, location.replace("&amp;", "&"))
         if _GOOGLE_HOST_RE.match(nxt):
             q = urllib.parse.parse_qs(urllib.parse.urlparse(nxt).query)
             target = (q.get("url") or q.get("q") or [""])[0]
             if re.match(r"^https?://", target, re.I) and not _GOOGLE_HOST_RE.match(target):
-                return target
+                return target, " > ".join(trace)
             url = nxt
             continue
-        return nxt if re.match(r"^https?://", nxt, re.I) else ""
-    return ""
+        return (nxt, " > ".join(trace)) if re.match(r"^https?://", nxt, re.I) else ("", " > ".join(trace))
+    return "", " > ".join(trace)
 
 
 def _resolve_goto_urls(items, user_agent, cookie_header="", referer="", timeout=6.0):
@@ -2100,16 +2121,18 @@ def _resolve_goto_urls(items, user_agent, cookie_header="", referer="", timeout=
     if pending:
         from concurrent.futures import ThreadPoolExecutor
 
-        with ThreadPoolExecutor(max_workers=min(5, len(pending))) as pool:
+        with ThreadPoolExecutor(max_workers=min(3, len(pending))) as pool:
             finals = list(pool.map(
                 lambda it: _resolve_one_goto(it["goto_url"], user_agent, cookie_header, referer, timeout),
                 pending,
             ))
-        for it, final in zip(pending, finals):
+        for it, (final, trace) in zip(pending, finals):
             if final:
                 it["url"] = final
                 it.pop("approx_url", None)
                 it.pop("anchors_debug", None)
+            else:
+                it["resolve_debug"] = f"cookies={'ja' if cookie_header else 'NEIN'} | {trace}"
     for it in items:
         it.pop("goto_url", None)
 
@@ -2338,7 +2361,7 @@ def _search_locked(browser, args):
             if item.get("url")
         )
         diag = [
-            f"[{index}] " + " | ".join(item.get("anchors_debug") or ["keine Link-Elemente im Treffer gefunden"])
+            f"[{index}] " + (item.get("resolve_debug") or " | ".join((item.get("anchors_debug") or ["keine Link-Elemente im Treffer gefunden"])[:2]))
             for index, item in enumerate(results, 1)
             if item.get("approx_url")
         ]
