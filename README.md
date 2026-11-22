@@ -26,7 +26,7 @@ Alternatively, clone it into `<dataDir>/plugins/websearch` and reload plugins.
 
 ### `search_web`
 
-Searches only the selected engine. Google is the default; blocked or empty results are reported without silently switching engines. The agent receives plain text only: numbered title, original result URL, and page description/snippet. Raw JSON metadata, parser diagnostics, attempts, and related queries are never included in the user-facing result.
+Searches only the selected engine. Google is the default; blocked or empty results are reported without silently switching engines. The agent receives plain text only: numbered title, original result URL, and page description/snippet. The **Debug output** plugin setting switches between plain-text results (default) and complete JSON diagnostics, including engine responses, attempts, and parser details.
 
 Parameters:
 - `query` (required)
