@@ -10,26 +10,18 @@ import { lookup } from "node:dns/promises";
 const execAsync = promisify(exec);
 const PLUGIN_DIR = fileURLToPath(new URL(".", import.meta.url));
 const BOOTSTRAP_PATH = join(PLUGIN_DIR, "browser-bootstrap.py");
+const BROWSER_USE_SCRIPT_PATH = join(PLUGIN_DIR, "scripts", "dp_browser.py");
 const DEFAULT_BROWSER_PORT = 9333;
 const DEFAULT_BROWSER_TIMEOUT_MS = 60000;
 const DEFAULT_IDLE_MINUTES = 15;
 
-const ENGINES = {
-  google: (query) => `https://www.google.com/search?q=${encodeURIComponent(query)}`,
-  bing: (query) => `https://www.bing.com/search?q=${encodeURIComponent(query)}`,
-  duckduckgo: (query) => `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
-  baidu: (query) => `https://www.baidu.com/s?wd=${encodeURIComponent(query)}`,
-  sogou: (query) => `https://www.sogou.com/web?query=${encodeURIComponent(query)}`,
-  yandex: (query) => `https://yandex.com/search/?text=${encodeURIComponent(query)}`,
-  naver: (query) => `https://search.naver.com/search.naver?query=${encodeURIComponent(query)}`,
-  yahoo_japan: (query) => `https://search.yahoo.co.jp/search?p=${encodeURIComponent(query)}`,
-};
+const ENGINES = { google: true, bing: true, duckduckgo: true, baidu: true, sogou: true, so: true, brave: true, yahoo: true, auto: true };
 
 const ENGINE_GUIDANCE = [
-  "Use Bing by default for general web searches; automatically fall back to other configured search engines when no results are extracted.",
+  "Use Google by default for web searches. Only use another search engine when the engine parameter explicitly selects it.",
   "Choose Baidu or Sogou for Chinese-language websites and sources.",
   "Choose Naver for Korean sources, Yahoo Japan for Japanese sources, and Yandex for Russian sources.",
-  "Honor an explicitly requested search engine. The engine parameter is optional and defaults to Google.",
+  "Honor the explicitly requested search engine. The engine parameter is optional and defaults to Google; never switch engines automatically.",
   "If an engine presents CAPTCHA, unusual-traffic, or bot-verification content, report the block; do not claim that no results exist.",
   "Use read_url to inspect promising result pages. Preserve the returned URLs as source references.",
 ];
@@ -64,7 +56,7 @@ function decode(buf) {
   }
 }
 
-function runPythonScript(pyExecutable, scriptArgs, { env = {}, timeout = DEFAULT_BROWSER_TIMEOUT_MS, signal } = {}) {
+function runPythonScript(pyExecutable, scriptArgs, { env = {}, timeout = DEFAULT_BROWSER_TIMEOUT_MS, signal, scriptPath = BOOTSTRAP_PATH } = {}) {
   return new Promise((resolve, reject) => {
     const childEnv = {
       ...process.env,
@@ -73,7 +65,7 @@ function runPythonScript(pyExecutable, scriptArgs, { env = {}, timeout = DEFAULT
     };
     execFile(
       pyExecutable,
-      [BOOTSTRAP_PATH, ...scriptArgs],
+      [scriptPath, ...scriptArgs],
       {
         encoding: "buffer",
         timeout,
@@ -632,7 +624,7 @@ export default {
         type: "object",
         properties: {
           query: { type: "string", description: "The search query." },
-          engine: { type: "string", enum: Object.keys(ENGINES), default: "bing", description: "Search engine. Defaults to Bing and falls back to other engines when no results are extracted. Choose a regional engine when the requested sources or language call for it." },
+          engine: { type: "string", enum: Object.keys(ENGINES), default: "google", description: "Search engine. Defaults to Google. Other engines are used only when explicitly selected." },
           limit: { type: "integer", minimum: 1, maximum: 20, default: 10, description: "Maximum number of results." },
         },
         required: ["query"]
@@ -640,53 +632,19 @@ export default {
       async execute(_toolCallId, params, signal) {
         const query = String(params.query ?? "").trim();
         if (!query) return { ok: false, error: "query is required" };
-        const engine = String(params.engine ?? "bing").toLowerCase();
+        const engine = String(params.engine ?? "google").toLowerCase();
         if (!ENGINES[engine]) return { ok: false, error: `Unsupported engine: ${engine}`, engines: Object.keys(ENGINES) };
         const limit = Math.min(20, Math.max(1, Number(params.limit) || 10));
         try {
           if (signal?.aborted) throw new Error("Search cancelled.");
-          const candidates = [engine, ...["bing", "google", "duckduckgo", "yandex", "baidu", "sogou", "naver", "yahoo_japan"].filter((name) => name !== engine)];
-          const attempts = [];
-          for (const candidate of candidates) {
-            let data;
-            try {
-              data = await withPage(ENGINES[candidate](query), (cdp) => evaluate(cdp, extractorExpression(candidate)));
-            } catch (error) {
-              attempts.push({ engine: candidate, kind: "error", reason: String(error?.message ?? error) });
-              continue;
-            }
-            if (data?.blocked) {
-              attempts.push({ engine: candidate, kind: "blocked", reason: "Search engine returned a CAPTCHA or bot-verification page." });
-              continue;
-            }
-            const results = Array.isArray(data?.results) ? data.results.slice(0, limit) : [];
-            if (results.length > 0) {
-              return {
-                ok: true,
-                engine: candidate,
-                requestedEngine: engine,
-                query,
-                pageTitle: data?.title ?? "",
-                resultCount: results.length,
-                results: results.map((item, index) => ({ rank: index + 1, ...item })),
-                attempts
-              };
-            }
-            attempts.push({
-              engine: candidate,
-              kind: data?.empty ? "empty" : "parse_miss",
-              reason: data?.title ? "Page loaded but no result cards were extracted." : "No searchable page content was detected."
-            });
-          }
-          return {
-            ok: false,
-            engine,
-            query,
-            resultCount: 0,
-            results: [],
-            attempts,
-            error: "All configured search engines returned no extractable results. See attempts for per-engine diagnostics."
-          };
+          await startBrowser();
+          const py = resolvePython();
+          const env = { ...buildBrowserEnv(), DP_DEFAULT_ENGINE: engine };
+          const args = ["search", query, "--engine", engine, "--no-fallback", "--limit", String(limit)];
+          const response = await runPythonScript(py, args, { env, signal, scriptPath: BROWSER_USE_SCRIPT_PATH });
+          if (!response?.ok) return response;
+          recordActivity();
+          return response;
         } catch (error) {
           return { ok: false, engine, query, error: String(error?.message ?? error), diagnostic: stderrTail.slice(-1000) };
         }
