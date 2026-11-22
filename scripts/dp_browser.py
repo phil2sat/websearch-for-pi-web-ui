@@ -2150,8 +2150,8 @@ def _search_locked(browser, args):
                         except Exception:
                             pass
 
-        formatted_results = "\\n\\n".join(
-            f"{index}. [{item.get('title') or 'Untitled'}]({item.get('url')})\\n"
+        formatted_results = "\n\n".join(
+            f"{index}. [{item.get('title') or 'Untitled'}]({item.get('url')})\n"
             f"   {item.get('snippet') or 'No description available.'}"
             for index, item in enumerate(results, 1)
             if item.get("url")
