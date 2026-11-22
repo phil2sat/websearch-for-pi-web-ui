@@ -112,7 +112,25 @@ def get_browser(port):
     if headless:
         co.headless(True)
 
-    return Chromium(co)
+    browser = Chromium(co)
+    for tab in browser.get_tabs():
+        try:
+            apply_request_user_agent(tab)
+        except Exception:
+            pass
+    return browser
+
+
+def apply_request_user_agent(tab):
+    """Override the User-Agent sent by this tab without changing Chromium startup."""
+    user_agent = os.environ.get(
+        "DP_USER_AGENT",
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/158.0.0.0 Safari/537.36",
+    ).strip()
+    if not user_agent:
+        return
+    tab.run_cdp("Network.enable")
+    tab.run_cdp("Network.setUserAgentOverride", userAgent=user_agent)
 
 
 def need_tab(browser):
@@ -352,6 +370,7 @@ def cmd_open(browser, args):
     tab = browser.latest_tab if tabs else None
     if tab is None:
         tab = browser.new_tab()
+    apply_request_user_agent(tab)
     ensure_console_hook(tab)
     tab.get(url)
     out(
@@ -370,6 +389,7 @@ def cmd_new(browser, args):
         fail("new 需要网址参数: new <url>")
     url = _norm_url(args[0])
     tab = browser.new_tab()
+    apply_request_user_agent(tab)
     ensure_console_hook(tab)
     tab.get(url)
     out(
@@ -391,6 +411,7 @@ def cmd_tabs(browser, args):
     # Initialize a fresh browser tab on Google and handle the German consent dialog.
     if tab is None:
         tab = browser.new_tab()
+    apply_request_user_agent(tab)
     if not (tab.url or "").startswith(("http://", "https://")):
         ensure_console_hook(tab)
         tab.get("https://www.google.de/")
@@ -1939,6 +1960,7 @@ def _search_locked(browser, args):
 
         if search_tab is None:
             search_tab = browser.new_tab()
+            apply_request_user_agent(search_tab)
             try:
                 search_tab.run_js(
                     "window.name = '" + SEARCH_WORKER_NAME + "'; document.title = 'Search Worker';"
@@ -1947,6 +1969,7 @@ def _search_locked(browser, args):
                 pass
     else:
         search_tab = browser.latest_tab if tabs else browser.new_tab()
+        apply_request_user_agent(search_tab)
 
     primary_engine = "bing" if engine == "auto" else engine
     candidate_engines = [primary_engine]
@@ -2042,7 +2065,9 @@ def _search_locked(browser, args):
                 if first_url and first_url.startswith("http"):
                     content_tab = None
                     try:
-                        content_tab = browser.new_tab(first_url)
+                        content_tab = browser.new_tab()
+                        apply_request_user_agent(content_tab)
+                        content_tab.get(first_url)
                         try:
                             content_tab.wait.doc_loaded(timeout=4.0)
                             content_tab.wait.ele_loaded("article, main, body", timeout=3.0)
@@ -2288,6 +2313,7 @@ def cmd_read_page(browser, args):
         tab = browser.latest_tab if tabs else None
         if tab is None:
             tab = browser.new_tab()
+        apply_request_user_agent(tab)
         tab.get(target_url)
     else:
         tab = need_tab(browser)
