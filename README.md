@@ -80,7 +80,7 @@ Search-engine HTML changes over time. The extractor uses engine-specific selecto
 
 Search execution, result extraction, engine-specific selectors, and browser connection use the vendored `scripts/dp_browser.py` implementation from `pi-web-ui` `browser_use` (reference revision `33c3f6c2d49f9f0a3c437df3bfe5e41d09bba355`). Google is the default. The selected engine is passed explicitly with `--no-fallback`, so the plugin never silently switches search engines. The browser lifecycle invokes the same script's `tabs` and `quit` commands; `search_web` invokes `search`, and `read_url` invokes `read_page`. These operations use the upstream browser-control implementation.
 
-### Debug output setting synchronization
+### JSON output setting synchronization
 
 The `debugOutput` setting is initialized from `host.getSettings()` during activation and updated through `host.onSettingsChanged()`. Search execution uses this synchronized runtime value; it does not re-read a potentially stale settings snapshot for each invocation.
 
