@@ -609,8 +609,8 @@ export default {
           returnByValue: true
         });
         const finalPageState = finalState.result?.value ?? pageState;
-        if (finalPageState.href === "about:blank") {
-          throw new Error("Chromium remained on about:blank after navigation.");
+        if (!/^https?:\\/\\//i.test(finalPageState.href)) {
+          throw new Error("Chromium did not reach an HTTP(S) page. Navigation state: " + JSON.stringify(finalPageState));
         }
 
         const result = await operation(cdp);
