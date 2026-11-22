@@ -1,6 +1,6 @@
 # Local Chromium Web Search for pi-web-ui
 
-A native pi-web-ui plugin that registers its tools and browser lifecycle directly with the plugin host. Google is the default search engine; the model can explicitly select Baidu, Bing, DuckDuckGo, Sogou, Yandex, Naver, or Yahoo Japan.
+A native pi-web-ui plugin that registers its tools and browser lifecycle directly with the plugin host. Bing is the default search engine, with automatic fallback across the configured engines; the model can explicitly select Baidu, Bing, DuckDuckGo, Sogou, Yandex, Naver, or Yahoo Japan.
 
 No hosted search API, API key, external MCP service, Playwright install, or separately managed browser process is required.
 
@@ -25,11 +25,11 @@ Alternatively, clone it into `<dataDir>/plugins/websearch` and reload plugins.
 
 ### `search_web`
 
-Searches the selected engine and returns structured results (rank, title, URL, snippet).
+Searches the selected engine and automatically tries the remaining configured engines when a page is blocked, empty, or cannot be parsed. Returns structured results (rank, title, URL, snippet).
 
 Parameters:
 - `query` (required)
-- `engine` (optional): `google` (default), `bing`, `duckduckgo`, `baidu`, `sogou`, `yandex`, `naver`, `yahoo_japan`
+- `engine` (optional): `bing` (default), `google`, `duckduckgo`, `baidu`, `sogou`, `yandex`, `naver`, `yahoo_japan`
 - `limit` (optional, 1–20; default 10)
 
 ### `read_url`
