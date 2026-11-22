@@ -1,6 +1,7 @@
 # Local Chromium Web Search for pi-web-ui
 
-A native pi-web-ui plugin that registers its tools and browser lifecycle directly with the plugin host. Bing is the default search engine, with automatic fallback across the configured engines; the model can explicitly select Baidu, Bing, DuckDuckGo, Sogou, Yandex, Naver, or Yahoo Japan.
+A native pi-web-ui plugin that registers its tools and browser lifecycle directly with the plugin host. Google is the default search engine. Other search engines are used only when explicitly selected.
+
 
 No hosted search API, API key, external MCP service, Playwright install, or separately managed browser process is required.
 
@@ -68,3 +69,8 @@ The plugin entry point exports `runtime.mjs` directly. There is no MCP child pro
 ## Notes
 
 Search-engine HTML changes over time. The extractor uses engine-specific selectors with a generic fallback. Respect each search engine's terms, access controls, and rate limits.
+
+
+## Search implementation
+
+Search execution, result extraction, engine-specific selectors, and browser connection use the vendored `scripts/dp_browser.py` implementation from `pi-web-ui` `browser_use` (reference revision `33c3f6c2d49f9f0a3c437df3bfe5e41d09bba355`). Google is the default. The selected engine is passed explicitly with `--no-fallback`, so the plugin never silently switches search engines. The browser lifecycle invokes the same script's `tabs` and `quit` commands; the separate bootstrap wrapper is no longer used.
