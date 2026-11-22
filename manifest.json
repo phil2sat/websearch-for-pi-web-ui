@@ -3,7 +3,7 @@
   "id": "websearch-for-pi-web-ui",
   "name": "Local Chromium Web Search",
   "nameEn": "Local Chromium Web Search",
-  "version": "0.1.42",
+  "version": "0.1.43",
   "icon": "🔎",
   "description": "Local headless Chromium web search. Google by default, with selectable regional search engines. No search API or external MCP service.",
   "descriptionEn": "Local headless Chromium web search. Google by default, with selectable regional search engines. No search API or external MCP service.",
@@ -37,8 +37,8 @@
       "label": "Debug output",
       "labelEn": "Debug output",
       "default": false,
-      "hint": "Off: use the exact independent plain-text search generator from version 0.1.35. On: use the exact independent JSON search generator from version 0.1.29. The selected generator output is returned unchanged.",
-      "hintEn": "Off: use the exact independent plain-text search generator from version 0.1.35. On: use the exact independent JSON search generator from version 0.1.29. The selected generator output is returned unchanged."
+      "hint": "Off: use the exact independent plain-text search generator from version 0.1.35. On: use the version 0.1.28-style pretty-printed JSON generator, with the original field order and formatted_results layout. The selected generator output is returned unchanged.",
+      "hintEn": "Off: use the exact independent plain-text search generator from version 0.1.35. On: use the version 0.1.28-style pretty-printed JSON generator, with the original field order and formatted_results layout. The selected generator output is returned unchanged."
     }
   ]
 }

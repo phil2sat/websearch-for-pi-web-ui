@@ -42,6 +42,11 @@ def out(obj, code=0) -> NoReturn:
     print(json.dumps(obj, ensure_ascii=False, default=str))
     sys.exit(code)
 
+def out_pretty(obj, code=0) -> NoReturn:
+    """Write indented JSON for the legacy debug search output."""
+    print(json.dumps(obj, ensure_ascii=False, indent=2, default=str))
+    sys.exit(code)
+
 
 def fail(msg, hint=None) -> NoReturn:
     d = {"ok": False, "cmd": CMD, "error": msg}
@@ -2419,7 +2424,7 @@ def _search_locked(browser, args):
             if diag:
                 formatted_results += "\n\nDiagnose (URL nur gekürzt gefunden, bitte diesen Block weitergeben):\n" + "\n".join(diag)
 
-            out(
+            out_pretty(
                 {
                     "ok": True,
                     "cmd": CMD,
@@ -2451,7 +2456,7 @@ def _search_locked(browser, args):
 
     if output_mode == "json":
         # Preserve the original 0.1.29 JSON shape for empty/blocked searches.
-        out(
+        out_pretty(
             {
                 "ok": True,
                 "cmd": CMD,
