@@ -3,7 +3,7 @@
   "id": "websearch-for-pi-web-ui",
   "name": "Local Chromium Web Search",
   "nameEn": "Local Chromium Web Search",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "icon": "🔎",
   "description": "Local headless Chromium web search. Google by default, with selectable regional search engines. No search API or external MCP service.",
   "descriptionEn": "Local headless Chromium web search. Google by default, with selectable regional search engines. No search API or external MCP service.",
@@ -20,15 +20,6 @@
       "labelEn": "Chromium executable path",
       "default": "",
       "hint": "Optional absolute path. Leave empty to auto-detect Chromium, Chrome, or Edge.",
-      "hintEn": "Optional absolute path. Leave empty to auto-detect Chromium, Chrome, or Edge."
-    },
-    {
-      "key": "headlessArgs",
-      "type": "text",
-      "label": "Additional Chromium arguments",
-      "labelEn": "Additional Chromium arguments",
-      "default": "",
-      "hint": "Optional extra arguments separated by newlines. Do not override the remote debugging or profile arguments.",
       "hintEn": "Optional extra arguments separated by newlines. Do not override the remote debugging or profile arguments."
     }
   ]
