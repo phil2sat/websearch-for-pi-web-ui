@@ -1058,6 +1058,7 @@ const officialOnly = !!arguments[2];
 const rawQuery = (arguments[3] || '').toLowerCase();
 const queryClean = rawQuery.replace(/官网|官方|网站|中文网|社区|下载|最新|版|教程|site|docs|official/g, '').trim();
 const queryWords = queryClean.split(/[\s+\-_:]+/).filter(w => w.length >= 2);
+let googleRejects = [];
 
 function clean(str) {
   return (str || '').replace(/\s+/g, ' ').trim();
@@ -1461,50 +1462,85 @@ try {
     const ansEl = document.querySelector('div[data-attrid], .kp-blk, .hgKElc, .IZ6rdc');
     if (ansEl) instantAnswer = textOf(ansEl, 400);
 
-    // Google may wrap each h3 in its result anchor instead of placing the anchor inside h3.
-    const headings = document.querySelectorAll('#search h3, #rso h3, h3');
+    // Robust Google extractor: works from every <h3>, tolerates relative /url?q= links,
+    // anchors outside the heading, and (as last resort) reconstructs the URL from <cite>.
+    const NOISE = [
+      /Es fehlt:.*$/i, /Missing:.*$/i, /\|?\s*Suchen mit:.*$/i, /\|?\s*Must include:.*$/i,
+      /Diese Seite übersetzen/gi, /Translate this page/gi, /Weitere Fragen.*$/i, /Mehr anzeigen/gi,
+      /Ca\.\s*[\d.,]+\s*„?Gefällt mir“?-Angaben/gi
+    ];
+    function cleanSnippet(t, title, citeText) {
+      let x = clean(t);
+      if (title) x = x.split(title).join(' ');
+      if (citeText) x = x.split(citeText).join(' ');
+      x = x.replace(/https?:\/\/\S+(\s›[^·]*)?·?/g, ' ');
+      for (const re of NOISE) x = x.replace(re, ' ');
+      return clean(x).slice(0, 700);
+    }
+    function urlFromAnchor(a) {
+      const attrs = [a.getAttribute('href'), a.getAttribute('data-url'), a.getAttribute('data-href')];
+      const ping = a.getAttribute('ping');
+      if (ping) {
+        try { const t = new URL(ping, location.href).searchParams.get('url'); if (t) attrs.push(t); } catch (e) {}
+      }
+      for (const raw of attrs) {
+        if (!raw || raw === '#' || /^javascript:/i.test(raw)) continue;
+        const u = cleanUrl(raw, a);
+        if (u && /^https?:\/\//i.test(u) && !/^https?:\/\/([^\/]*\.)?(google|gstatic|googleusercontent)\.[a-z.]+(\/|$)/i.test(u)) return u;
+      }
+      return '';
+    }
+    function cardFor(h) {
+      let node = h, best = h.parentElement;
+      for (let i = 0; i < 9 && node.parentElement; i++) {
+        node = node.parentElement;
+        if (node.querySelectorAll('h3').length > 1) break;
+        best = node;
+      }
+      return best;
+    }
+    const rejects = [];
+    const headings = document.querySelectorAll('h3');
     for (const heading of headings) {
-      if (heading.closest('nav, header, footer, aside, form')) continue;
+      const title = textOf(heading, 200);
+      if (!title || title.length < 3) { rejects.push({ title: title || '', why: 'no title' }); continue; }
+      if (heading.closest('nav, header, footer, [role="navigation"], #tads, #tadsb, #bottomads, [data-text-ad], [data-is-ad]')) { rejects.push({ title, why: 'nav/ad' }); continue; }
+      const card = cardFor(heading);
 
-      const card = heading.closest('[data-sokoban-container], .MjjYud, #search .g, div.g:not(.g-blk)')
-        || heading.parentElement?.parentElement
-        || heading.parentElement;
-      if (!card || isAdCard(card)) continue;
+      let href = '';
+      const own = heading.closest('a') || heading.querySelector('a');
+      if (own) href = urlFromAnchor(own);
+      if (!href) {
+        for (const a of card.querySelectorAll('a')) { href = urlFromAnchor(a); if (href) break; }
+      }
+      let approx = false;
+      if (!href) {
+        const c = textOf(card.querySelector('cite, [data-dtld]'), 300) || '';
+        const m = c.match(/^(https?:\/\/[^\s›]+)((?:\s*›\s*[^\s›]+)*)/);
+        if (m && !/\.\.\./.test(m[2])) { href = m[1].replace(/\/$/, '') + m[2].split('›').map(x => x.trim()).filter(Boolean).map(x => '/' + x).join(''); approx = true; }
+      }
+      if (!href) { rejects.push({ title, why: 'no external url' }); continue; }
+      if (seenUrls.has(href)) { rejects.push({ title, why: 'duplicate' }); continue; }
 
-      const linkEl = heading.closest('a[href]')
-        || heading.querySelector('a[href]')
-        || card.querySelector('a[href]');
-      const rawHref = linkEl?.getAttribute('href')
-        || card.getAttribute('data-href')
-        || card.getAttribute('data-url');
-      if (!rawHref) continue;
-
-      const href = cleanUrl(rawHref, card);
-      if (!href || !/^https?:\/\//i.test(href) || /(^|\.)google\.[a-z.]+\//i.test(href) || seenUrls.has(href)) continue;
-
-      const title = textOf(heading, 180) || textOf(linkEl, 180);
-      if (!title || title.length < 3) continue;
-
-      const snippetEl = card.querySelector(
-        'div[data-sncf], [data-sncf], .VwiC3b, .yXK7lf, .MUxGbd, [class*="snippet"], [class*="description"]'
-      );
-      let snippet = textOf(snippetEl, 500);
-      if (!snippet) {
-        const textBlocks = Array.from(card.querySelectorAll('div, span'))
-          .filter(el => !el.querySelector('h3') && !el.querySelector('a[href]'))
-          .map(el => textOf(el, 500))
-          .filter(text => text && text.length >= 45 && text !== title);
-        snippet = textBlocks.sort((a, b) => b.length - a.length)[0] || '';
+      const citeText = textOf(card.querySelector('cite, [data-dtld]'), 300) || '';
+      let snippet = textOf(card.querySelector('div[data-sncf], [data-sncf], .VwiC3b, .yXK7lf, .MUxGbd, [class*="snippet"], [class*="description"]'), 700) || '';
+      snippet = cleanSnippet(snippet, title, citeText);
+      if (snippet.length < 40) {
+        const blocks = Array.from(card.querySelectorAll('div, span, p, em'))
+          .filter(el => !el.querySelector('h3, cite'))
+          .map(el => cleanSnippet(textOf(el, 900) || '', title, citeText))
+          .filter(t => t.length >= 40);
+        snippet = blocks.sort((x, y) => y.length - x.length)[0] || cleanSnippet(textOf(card, 1500) || '', title, citeText);
       }
 
-      const sourceEl = card.querySelector('cite, [data-dtld], span.LEwnzc');
-      const site = textOf(sourceEl, 100);
       seenUrls.add(href);
+      const site = citeText ? citeText.split('›')[0].replace(/^https?:\/\//, '').trim().slice(0, 100) : null;
       const isOfficial = isOfficialBadge(card, href, title, site);
       const date = extractDate(card, snippet);
-      items.push({ title: title, url: href, snippet: snippet || '', site: site || null, date: date || null, isOfficial: isOfficial });
+      items.push({ title: title, url: href, snippet: snippet || '', site: site, date: date || null, isOfficial: isOfficial, approx_url: approx || undefined });
       if (items.length >= limit) break;
     }
+    if (items.length === 0) googleRejects = rejects.slice(0, 20);
   }
 
   // 3. 通用自适应启发式兜底抽取器（Universal Heuristic Fallback）
@@ -1577,6 +1613,7 @@ try {
           .map(el => (el.innerText || '').replace(/\s+/g, ' ').trim())
           .filter(Boolean)
           .slice(0, 20),
+        rejects: googleRejects,
         selectors: {
           result_headings: document.querySelectorAll('#search h3, #rso h3, h3').length,
           result_containers: document.querySelectorAll('#search .g, #rso > div.MjjYud, [data-sokoban-container]').length
@@ -2153,8 +2190,9 @@ def _search_locked(browser, args):
                             pass
 
         formatted_results = "\n\n".join(
-            f"{index}. [{item.get('title') or 'Untitled'}]({item.get('url')})\n"
-            f"   {item.get('snippet') or 'No description available.'}"
+            f"{index}. {item.get('title') or 'Untitled'}\n"
+            f"   {item.get('url')}\n\n"
+            f"   {item.get('snippet') or 'Keine Beschreibung verfügbar.'}"
             for index, item in enumerate(results, 1)
             if item.get("url")
         )

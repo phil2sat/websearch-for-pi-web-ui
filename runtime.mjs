@@ -23,7 +23,7 @@ const ENGINE_GUIDANCE = [
   "Honor the explicitly requested search engine. The engine parameter is optional and defaults to Google; never switch engines automatically.",
   "If an engine presents CAPTCHA, unusual-traffic, or bot-verification content, report the block; do not claim that no results exist.",
   "Use read_url to inspect promising result pages. Preserve the returned URLs as source references.",
-  "For user-facing search answers, use formatted_results as the primary readable output: each result has a clickable title/URL followed by its page description on the next line.",
+  "For user-facing search answers, output formatted_results exactly as returned (numbered title, URL on the next line, blank line, description). Do not re-wrap it in JSON or code blocks, and do not call browser_status instead of reporting a failed or empty search.",
   "Do not expose internal attempts, parser diagnostics, debug fields, or raw JSON to the user unless they explicitly request diagnostics.",
 ];
 
