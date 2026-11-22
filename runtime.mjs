@@ -41,7 +41,6 @@ function toolResult(text) {
 }
 
 function formatSearchText(response, query, engine) {
-  if (typeof response === "string") return response.trim();
   if (typeof response?.raw === "string") return response.raw.trim();
   if (!response?.ok) return `Suche fehlgeschlagen: ${response?.error ?? "unbekannter Fehler"}`;
 
@@ -79,7 +78,7 @@ function decode(buf) {
   }
 }
 
-function runPythonScript(pyExecutable, scriptArgs, { env = {}, timeout = DEFAULT_BROWSER_TIMEOUT_MS, signal, scriptPath = BROWSER_USE_SCRIPT_PATH, plainText = false } = {}) {
+function runPythonScript(pyExecutable, scriptArgs, { env = {}, timeout = DEFAULT_BROWSER_TIMEOUT_MS, signal, scriptPath = BROWSER_USE_SCRIPT_PATH } = {}) {
   return new Promise((resolve, reject) => {
     const childEnv = {
       ...process.env,
@@ -118,12 +117,8 @@ function runPythonScript(pyExecutable, scriptArgs, { env = {}, timeout = DEFAULT
           if (stderrText) {
             reject(new Error(`browser_use runtime returned no output: ${stderrText.slice(-300)}`));
           } else {
-            resolve(plainText ? "" : { ok: true });
+            resolve({ ok: true });
           }
-          return;
-        }
-        if (plainText) {
-          resolve(stdoutText);
           return;
         }
         const startIdx = stdoutText.lastIndexOf("\n{");
@@ -443,7 +438,7 @@ export default {
           const py = resolvePython();
           const env = { ...buildBrowserEnv(), DP_DEFAULT_ENGINE: engine };
           const args = ["search", query, "--engine", engine, "--no-fallback", "--limit", String(limit)];
-          const response = await runPythonScript(py, args, { env, timeout: 150000, scriptPath: BROWSER_USE_SCRIPT_PATH, plainText: true });
+          const response = await runPythonScript(py, args, { env, timeout: 150000, scriptPath: BROWSER_USE_SCRIPT_PATH });
           recordActivity();
           return formatSearchText(response, query, engine);
         } catch (error) {
