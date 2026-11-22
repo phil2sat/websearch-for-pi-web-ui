@@ -386,6 +386,40 @@ def cmd_new(browser, args):
 
 def cmd_tabs(browser, args):
     tabs = browser.get_tabs()
+    tab = browser.latest_tab if tabs else None
+
+    # Initialize a fresh browser tab on Google and handle the German consent dialog.
+    if tab is None:
+        tab = browser.new_tab()
+    if not (tab.url or "").startswith(("http://", "https://")):
+        ensure_console_hook(tab)
+        tab.get("https://www.google.de/")
+        try:
+            tab.wait.doc_loaded(timeout=10)
+        except Exception:
+            pass
+        time.sleep(1.5)
+
+        consent_button = None
+        for locator in ("text:Alle akzeptieren", "text=Alle akzeptieren"):
+            try:
+                consent_button = tab.ele(locator, timeout=3)
+                if consent_button:
+                    break
+            except Exception:
+                continue
+        if consent_button:
+            try:
+                consent_button.click()
+                try:
+                    tab.wait.doc_loaded(timeout=5)
+                except Exception:
+                    pass
+                time.sleep(0.5)
+            except Exception:
+                pass
+
+    tabs = browser.get_tabs()
     latest = browser.latest_tab if tabs else None
     lst = [
         {
