@@ -1014,9 +1014,6 @@ def cmd_console(browser, args):
         elif a == "--clear":
             clear = True
             i += 1
-        elif a == "--output" and i + 1 < len(args):
-            output_mode = args[i + 1].strip().lower()
-            i += 2
         elif a == "--limit" and i + 1 < len(args):
             try:
                 limit = int(args[i + 1])
@@ -2225,6 +2222,9 @@ def _search_locked(browser, args):
         elif a in ("--fetch-top", "--fetch-top-content", "--read-top"):
             fetch_top = True
             i += 1
+        elif a == "--output" and i + 1 < len(args):
+            output_mode = args[i + 1].strip().lower()
+            i += 2
         elif a == "--limit" and i + 1 < len(args):
             try:
                 limit = int(args[i + 1])
