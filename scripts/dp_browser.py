@@ -404,11 +404,50 @@ def cmd_new(browser, args):
     )
 
 
+def _google_consent_pending(tab):
+    url = (tab.url or "").lower()
+    if "consent.google.com" in url or "/consent" in url:
+        return True
+    try:
+        return bool(tab.run_js(
+            "return !!document.querySelector('#L2AGLb') || "
+            "/before you continue to google|bevor sie google verwenden|"
+            "bevor sie fortfahren|alle akzeptieren/i.test("
+            "(document.title || '') + ' ' + (document.body?.innerText || ''))"
+        ))
+    except Exception:
+        return False
+
+
+def _accept_google_consent(tab):
+    """Accept Google's consent prompt in the existing browser tab."""
+    if not _google_consent_pending(tab):
+        return True
+
+    for locator in ("#L2AGLb", "text:Alle akzeptieren", "text:Accept all"):
+        try:
+            button = tab.ele(locator, timeout=2)
+            if button:
+                button.click()
+                for _ in range(20):
+                    time.sleep(0.5)
+                    if not _google_consent_pending(tab):
+                        try:
+                            tab.wait.doc_loaded(timeout=3)
+                        except Exception:
+                            pass
+                        return True
+        except Exception:
+            continue
+
+    return not _google_consent_pending(tab)
+
+
 def cmd_tabs(browser, args):
     tabs = browser.get_tabs()
     tab = browser.latest_tab if tabs else None
 
-    # Initialize a fresh browser tab on Google and handle the German consent dialog.
+    # Open Google's homepage in the persistent search tab on first startup.
     if tab is None:
         tab = browser.new_tab()
     apply_request_user_agent(tab)
@@ -419,26 +458,9 @@ def cmd_tabs(browser, args):
             tab.wait.doc_loaded(timeout=10)
         except Exception:
             pass
-        time.sleep(1.5)
+        time.sleep(1.0)
 
-        consent_button = None
-        for locator in ("text:Alle akzeptieren", "text=Alle akzeptieren"):
-            try:
-                consent_button = tab.ele(locator, timeout=3)
-                if consent_button:
-                    break
-            except Exception:
-                continue
-        if consent_button:
-            try:
-                consent_button.click()
-                try:
-                    tab.wait.doc_loaded(timeout=5)
-                except Exception:
-                    pass
-                time.sleep(0.5)
-            except Exception:
-                pass
+    _accept_google_consent(tab)
 
     tabs = browser.get_tabs()
     latest = browser.latest_tab if tabs else None
@@ -1086,7 +1108,8 @@ try {
     [/wappass\.baidu\.com|\/static\/captcha/i, '百度安全验证'],
     [/antispider/i, '搜狗反爬拦截'],
     [/qcaptcha\.so\.com|captcha\.so\.com/i, '360 访问异常验证'],
-    [/google\.[a-z.]+\/sorry|\/consent\./i, 'Google 人机验证'],
+    [/google\.[a-z.]+\/sorry/i, 'Google 人机验证'],
+    [/consent\.google\.com|\/consent(?:\/|\?|$)/i, 'Google Consent-Seite'],
     [/\/captcha|\/challenge|\/verify/i, '人机验证页面'],
   ];
   for (const [re, label] of urlSignals) {
@@ -1100,6 +1123,7 @@ try {
     [/搜狗验证码|验证码拦截|请输入验证码/, '搜狗人机验证'],
     [/360安全验证|访问异常页面|访问过于频繁/, '360 访问异常验证'],
     [/Please show you're not a robot|verify you are human|unusual traffic|Access Denied|Security Challenge|Too Many Requests/i, '反爬拦截'],
+    [/Before you continue to Google|Bevor Sie Google verwenden|Alle akzeptieren/i, 'Google Consent-Seite'],
   ];
   for (const [re, label] of textSignals) {
     if (re.test(bodyText)) {
@@ -1601,7 +1625,7 @@ def _build_search_url(query: str, engine: str, time_range: str = "all", page: in
             url += f"&b={(p - 1) * 10 + 1}"
         return url
     elif eng == "google":
-        url = f"https://www.google.com/search?q={q}&hl=de-DE"
+        url = f"https://www.google.de/search?q={q}&hl=de-DE"
         if tr in ("day", "week", "month", "year"):
             qdr = {"day": "d", "week": "w", "month": "m", "year": "y"}.get(tr, "d")
             url += f"&tbs=qdr:{qdr}"
@@ -1641,6 +1665,15 @@ def _execute_search_on_tab(
         tab.wait.doc_loaded(timeout=3.0)
     except Exception:
         pass
+
+    if engine == "google" and not _accept_google_consent(tab):
+        return {
+            "ok": False,
+            "kind": "blocked",
+            "blocked": True,
+            "engine": engine,
+            "error": "Google consent page is still active; the accept button was not found or could not be clicked.",
+        }
 
     wait_sel = {
         "bing": "#b_results",
@@ -1896,7 +1929,7 @@ def _search_locked(browser, args):
     time_range = "all"
     fetch_top = False
     fast_search = os.environ.get("DP_FAST_SEARCH", "1").strip().lower() not in ("0", "false", "no", "off")
-    tab_isolation = os.environ.get("DP_SEARCH_ISOLATION", "1").strip().lower() not in ("0", "false", "no", "off")
+    tab_isolation = False
 
     i = 0
     query_parts = []
@@ -1938,38 +1971,15 @@ def _search_locked(browser, args):
         fail("搜索关键词不能为空")
 
     tabs = browser.get_tabs()
-    original_tab = browser.latest_tab if tabs else None
-
-    search_tab = None
-    if tab_isolation and tabs:
-        orphans = []
-        for t in tabs:
-            try:
-                if t.run_js("return window.name") == SEARCH_WORKER_NAME:
-                    if search_tab is None:
-                        search_tab = t
-                    else:
-                        orphans.append(t)
-            except Exception:
-                pass
-        for t in orphans:
-            try:
-                t.close()
-            except Exception:
-                pass
-
-        if search_tab is None:
-            search_tab = browser.new_tab()
-            apply_request_user_agent(search_tab)
-            try:
-                search_tab.run_js(
-                    "window.name = '" + SEARCH_WORKER_NAME + "'; document.title = 'Search Worker';"
-                )
-            except Exception:
-                pass
-    else:
-        search_tab = browser.latest_tab if tabs else browser.new_tab()
-        apply_request_user_agent(search_tab)
+    search_tab = browser.latest_tab if tabs else browser.new_tab()
+    apply_request_user_agent(search_tab)
+    if engine == "google" and not (search_tab.url or "").startswith(("http://", "https://")):
+        search_tab.get("https://www.google.de/")
+        try:
+            search_tab.wait.doc_loaded(timeout=10)
+        except Exception:
+            pass
+        _accept_google_consent(search_tab)
 
     primary_engine = "bing" if engine == "auto" else engine
     candidate_engines = [primary_engine]
@@ -2126,12 +2136,6 @@ def _search_locked(browser, args):
                 "attempts": attempts,
             }
         )
-    finally:
-        if tab_isolation and original_tab is not None and original_tab != search_tab:
-            try:
-                browser.activate_tab(original_tab)
-            except Exception:
-                pass
 
 
 ARTICLE_EXTRACT_JS = r"""
