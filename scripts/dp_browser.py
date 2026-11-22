@@ -24,6 +24,9 @@ import sys
 import tempfile
 import time
 import traceback
+import urllib.error
+import urllib.parse
+import urllib.request
 from collections import Counter
 from pathlib import Path
 from typing import NoReturn
@@ -2042,50 +2045,73 @@ def cmd_search(browser, args):
         _search_locked(browser, args)
 
 
-def _resolve_goto_urls(browser, items, per_item_timeout=5.0):
-    """Google hides result targets behind opaque /goto?url=TOKEN redirects.
-    Open each such link in a throw-away tab and read the final URL."""
-    google_host = re.compile(r"^https?://([^/]*\.)?(google|gstatic)\.[a-z.]+(/|$)", re.I)
-    for item in items:
-        goto = item.get("goto_url")
-        if not goto:
-            continue
-        tab = None
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_GOOGLE_HOST_RE = re.compile(r"^https?://([^/]*\.)?(google|gstatic)\.[a-z.]+(/|$)", re.I)
+
+
+def _resolve_one_goto(goto, user_agent, cookie_header, referer, timeout):
+    """Follow Google's /goto redirect with plain GETs (no browser tab, no page load).
+    Only the Location headers are read; the target site is never contacted."""
+    opener = urllib.request.build_opener(_NoRedirect)
+    url = goto
+    for _ in range(4):
+        headers = {
+            "User-Agent": user_agent,
+            "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
+            "Accept-Language": "de-DE,de;q=0.9,en;q=0.8",
+        }
+        if referer:
+            headers["Referer"] = referer
+        if cookie_header and _GOOGLE_HOST_RE.match(url):
+            headers["Cookie"] = cookie_header
+        location = ""
         try:
-            tab = browser.new_tab()
-            try:
-                apply_request_user_agent(tab)
-            except Exception:
-                pass
-            try:
-                tab.set.load_mode.none()
-            except Exception:
-                pass
-            tab.get(goto)
-            deadline = time.time() + per_item_timeout
-            final = ""
-            while time.time() < deadline:
-                try:
-                    current = tab.url or ""
-                except Exception:
-                    current = ""
-                if current.startswith("http") and not google_host.match(current):
-                    final = current
-                    break
-                time.sleep(0.15)
-            if final:
-                item["url"] = final
-                item.pop("approx_url", None)
-                item.pop("anchors_debug", None)
+            resp = opener.open(urllib.request.Request(url, headers=headers), timeout=timeout)
+            body = resp.read(65536).decode("utf-8", "replace")
+            m = re.search(r'http-equiv=["\']refresh["\'][^>]*url=([^"\'>\s]+)', body, re.I)
+            location = m.group(1) if m else ""
+        except urllib.error.HTTPError as e:
+            if e.code in (301, 302, 303, 307, 308):
+                location = e.headers.get("Location", "")
+            else:
+                return ""
         except Exception:
-            pass
-        finally:
-            if tab is not None:
-                try:
-                    tab.close()
-                except Exception:
-                    pass
-        item.pop("goto_url", None)
+            return ""
+        if not location:
+            return ""
+        nxt = urllib.parse.urljoin(url, location.replace("&amp;", "&"))
+        if _GOOGLE_HOST_RE.match(nxt):
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(nxt).query)
+            target = (q.get("url") or q.get("q") or [""])[0]
+            if re.match(r"^https?://", target, re.I) and not _GOOGLE_HOST_RE.match(target):
+                return target
+            url = nxt
+            continue
+        return nxt if re.match(r"^https?://", nxt, re.I) else ""
+    return ""
+
+
+def _resolve_goto_urls(items, user_agent, cookie_header="", referer="", timeout=6.0):
+    pending = [it for it in items if it.get("goto_url")]
+    if pending:
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(max_workers=min(5, len(pending))) as pool:
+            finals = list(pool.map(
+                lambda it: _resolve_one_goto(it["goto_url"], user_agent, cookie_header, referer, timeout),
+                pending,
+            ))
+        for it, final in zip(pending, finals):
+            if final:
+                it["url"] = final
+                it.pop("approx_url", None)
+                it.pop("anchors_debug", None)
+    for it in items:
+        it.pop("goto_url", None)
 
 
 def _search_locked(browser, args):
@@ -2251,7 +2277,27 @@ def _search_locked(browser, args):
 
         results = _apply_domain_diversity(results, max_per_domain=2)
         results = results[:limit]
-        _resolve_goto_urls(browser, results)
+        try:
+            default_ua = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/158.0.0.0 Safari/537.36"
+            ua = os.environ.get("DP_USER_AGENT", default_ua).strip() or default_ua
+            cookie_header = ""
+            try:
+                cookie_header = "; ".join(
+                    f"{c.get('name')}={c.get('value')}"
+                    for c in search_tab.cookies()
+                    if re.search(r"google\.", str(c.get("domain", "")), re.I)
+                )
+            except Exception:
+                pass
+            referer = ""
+            try:
+                referer = search_tab.url or ""
+            except Exception:
+                pass
+            _resolve_goto_urls(results, ua, cookie_header, referer)
+        except Exception:
+            for _it in results:
+                _it.pop("goto_url", None)
 
         top_content = None
         if fetch_top and results:
