@@ -14,9 +14,11 @@ The plugin discovers common executable paths automatically. Set `chromiumPath` i
 
 ## Install
 
-Install this repository as a pi-web-ui plugin from the plugin manager, using the GitHub source:
+Install directly from GitHub:
 
-`phil2sat/websearch-for-pi-web-ui`
+```bash
+pi-web-ui install phil2sat/websearch-for-pi-web-ui --name websearch
+```
 
 Alternatively, clone it into `<dataDir>/plugins/websearch` and reload plugins.
 
