@@ -1,6 +1,6 @@
 {
   "apiVersion": 2,
-  "id": "websearch",
+  "id": "websearch-for-pi-web-ui",
   "name": "Local Chromium Web Search",
   "nameEn": "Local Chromium Web Search",
   "version": "0.1.0",
@@ -9,7 +9,9 @@
   "descriptionEn": "Local headless Chromium web search. Google by default, with selectable regional search engines. No search API or external MCP service.",
   "view": false,
   "preload": false,
-  "permissions": ["tools"],
+  "permissions": [
+    "tools"
+  ],
   "settings": [
     {
       "key": "chromiumPath",
