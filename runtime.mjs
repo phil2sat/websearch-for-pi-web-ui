@@ -24,8 +24,7 @@ const ENGINE_GUIDANCE = [
   "If an engine presents CAPTCHA, unusual-traffic, or bot-verification content, report the block; do not claim that no results exist.",
   "Use read_url to inspect promising result pages. Preserve the returned URLs as source references.",
   "Result URLs pointing to google.*/goto are Google redirect links: pass them unchanged to read_url, which resolves them to the real page. Name the source by the site shown after the title.",
-  "For user-facing search answers, use only the plain-text search results returned by search_web: title, original result URL, and page description/snippet. Never output the raw JSON response, metadata, diagnostics, attempts, related queries, or parser details.",
-  "Do not expose internal attempts, parser diagnostics, debug fields, or raw JSON to the user unless they explicitly request diagnostics.",
+  "The search_web output mode is controlled by the plugin setting Debug output. In plain-text mode, use only title, original result URL, and page description/snippet. In debug mode, inspect the complete JSON including attempts, parser diagnostics, and engine details.",
 ];
 
 const MAX_TEXT = 18000;
@@ -257,6 +256,7 @@ export default {
     let idleTimer = null;
     let idleTimeoutMinutes = DEFAULT_IDLE_MINUTES;
     let headlessMode = true;
+    let debugOutput = false;
     let bgTaskHandle = null;
     let starting = null;
     let disposed = false;
@@ -269,6 +269,9 @@ export default {
       }
       if (typeof stored?.headless === "boolean") {
         headlessMode = stored.headless;
+      }
+      if (typeof stored?.debugOutput === "boolean") {
+        debugOutput = stored.debugOutput;
       }
     } catch {}
 
@@ -383,6 +386,9 @@ export default {
           idleTimeoutMinutes = Math.max(0, Math.floor(values.idleTimeoutMinutes));
           armIdleTimer();
         }
+        if (typeof values.debugOutput === "boolean") {
+          debugOutput = values.debugOutput;
+        }
         if (typeof values.headless === "boolean" && values.headless !== headlessMode) {
           headlessMode = values.headless;
           if (browserActive) {
@@ -436,11 +442,11 @@ export default {
           if (signal?.aborted) throw new Error("Search cancelled.");
           await startBrowser();
           const py = resolvePython();
-          const env = { ...buildBrowserEnv(), DP_DEFAULT_ENGINE: engine };
+          const env = { ...buildBrowserEnv(), DP_DEFAULT_ENGINE: engine, DP_SEARCH_DEBUG: debugOutput ? "1" : "0" };
           const args = ["search", query, "--engine", engine, "--no-fallback", "--limit", String(limit)];
           const response = await runPythonScript(py, args, { env, timeout: 150000, scriptPath: BROWSER_USE_SCRIPT_PATH });
           recordActivity();
-          return formatSearchText(response, query, engine);
+          return debugOutput ? JSON.stringify(response, null, 2) : formatSearchText(response, query, engine);
         } catch (error) {
           return `Suche fehlgeschlagen: ${String(error?.message ?? error)}`;
         }
