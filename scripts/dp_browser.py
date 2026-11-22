@@ -2132,6 +2132,37 @@ def _resolve_one_goto(goto, user_agent, cookie_header, referer, timeout, max_wai
     return "", " > ".join(trace)
 
 
+def _default_user_agent():
+    default_ua = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/158.0.0.0 Safari/537.36"
+    return os.environ.get("DP_USER_AGENT", default_ua).strip() or default_ua
+
+
+def _google_cookie_header(tab):
+    try:
+        return "; ".join(
+            f"{c.get('name')}={c.get('value')}"
+            for c in tab.cookies()
+            if re.search(r"google\.", str(c.get("domain", "")), re.I)
+        )
+    except Exception:
+        return ""
+
+
+def _safe_tab_url(tab):
+    try:
+        return tab.url or ""
+    except Exception:
+        return ""
+
+
+def _is_google_goto(url):
+    try:
+        u = urllib.parse.urlparse(url)
+        return bool(re.search(r"(^|\.)google\.[a-z.]+$", u.hostname or "", re.I)) and u.path.rstrip("/") == "/goto"
+    except Exception:
+        return False
+
+
 def _resolve_goto_urls(items, user_agent, cookie_header="", referer="", timeout=8.0, budget=40.0):
     """Resolve Google /goto links one after another (parallel requests make Google raise its wait time)."""
     started = time.time()
@@ -2316,27 +2347,21 @@ def _search_locked(browser, args):
 
         results = _apply_domain_diversity(results, max_per_domain=2)
         results = results[:limit]
-        try:
-            default_ua = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/158.0.0.0 Safari/537.36"
-            ua = os.environ.get("DP_USER_AGENT", default_ua).strip() or default_ua
-            cookie_header = ""
+        if os.environ.get("DP_RESOLVE_GOTO", "0") == "1":
             try:
-                cookie_header = "; ".join(
-                    f"{c.get('name')}={c.get('value')}"
-                    for c in search_tab.cookies()
-                    if re.search(r"google\.", str(c.get("domain", "")), re.I)
-                )
+                ua = _default_user_agent()
+                _resolve_goto_urls(results, ua, _google_cookie_header(search_tab), _safe_tab_url(search_tab))
             except Exception:
                 pass
-            referer = ""
-            try:
-                referer = search_tab.url or ""
-            except Exception:
-                pass
-            _resolve_goto_urls(results, ua, cookie_header, referer)
-        except Exception:
-            for _it in results:
-                _it.pop("goto_url", None)
+        for _it in results:
+            goto = _it.pop("goto_url", None)
+            if goto and _it.get("approx_url"):
+                # Lazy resolution: read_url resolves Google /goto links on demand.
+                _it["display_url"] = _it.get("url")
+                _it["url"] = goto
+                _it["redirect"] = True
+                _it.pop("approx_url", None)
+                _it.pop("anchors_debug", None)
 
         top_content = None
         if fetch_top and results:
@@ -2370,7 +2395,7 @@ def _search_locked(browser, args):
                             pass
 
         formatted_results = "\n\n".join(
-            f"{index}. {item.get('title') or 'Untitled'}\n"
+            f"{index}. {item.get('title') or 'Untitled'}{(' — ' + item['site']) if item.get('redirect') and item.get('site') else ''}\n"
             f"   {item.get('url')}{'  (URL ggf. gekürzt)' if item.get('approx_url') else ''}\n\n"
             f"   {item.get('snippet') or 'Keine Beschreibung verfügbar.'}"
             for index, item in enumerate(results, 1)
@@ -2644,6 +2669,20 @@ def cmd_read_page(browser, args):
     )
 
 
+def cmd_resolve_goto(browser, args):
+    """Resolve a Google /goto redirect link to the real target URL (header-only GETs, no page load)."""
+    url = next((a for a in args if a.startswith("http://") or a.startswith("https://")), "")
+    if not url or not _is_google_goto(url):
+        fail("resolve_goto 需要 Google /goto 链接: resolve_goto <url>")
+    tabs = browser.get_tabs()
+    tab = browser.latest_tab if tabs else None
+    cookies = _google_cookie_header(tab) if tab is not None else ""
+    final, trace = _resolve_one_goto(url, _default_user_agent(), cookies, "https://www.google.de/", 10.0)
+    if not final:
+        fail(f"Google-Weiterleitung konnte nicht aufgelöst werden: cookies={'ja' if cookies else 'NEIN'} | {trace}")
+    out({"ok": True, "cmd": CMD, "url": final})
+
+
 def cmd_screenshot(browser, args):
     tab = need_tab(browser)
     path = None
@@ -2682,6 +2721,7 @@ COMMANDS = {
     "new": cmd_new,
     "search": cmd_search,
     "read_page": cmd_read_page,
+    "resolve_goto": cmd_resolve_goto,
     "article": cmd_read_page,
     "tabs": cmd_tabs,
     "switch": cmd_switch,

@@ -23,6 +23,7 @@ const ENGINE_GUIDANCE = [
   "Honor the explicitly requested search engine. The engine parameter is optional and defaults to Google; never switch engines automatically.",
   "If an engine presents CAPTCHA, unusual-traffic, or bot-verification content, report the block; do not claim that no results exist.",
   "Use read_url to inspect promising result pages. Preserve the returned URLs as source references.",
+  "Result URLs pointing to google.*/goto are Google redirect links: pass them unchanged to read_url, which resolves them to the real page. Name the source by the site shown after the title.",
   "For user-facing search answers, output formatted_results exactly as returned (numbered title, URL on the next line, blank line, description). Do not re-wrap it in JSON or code blocks, and do not call browser_status instead of reporting a failed or empty search.",
   "Do not expose internal attempts, parser diagnostics, debug fields, or raw JSON to the user unless they explicitly request diagnostics.",
 ];
@@ -189,6 +190,15 @@ function isPrivateAddress(hostname) {
       /^fe[89ab]/.test(host) || host.startsWith("::ffff:127.") || host.startsWith("::ffff:10.");
   }
   return false;
+}
+
+function isGoogleGotoUrl(input) {
+  try {
+    const u = new URL(String(input));
+    return /(^|\.)google\.[a-z.]+$/i.test(u.hostname) && u.pathname.replace(/\/+$/, "") === "/goto";
+  } catch {
+    return false;
+  }
 }
 
 function validatePublicUrl(input) {
@@ -440,11 +450,19 @@ export default {
       },
       async execute(_toolCallId, params, signal) {
         try {
-          const url = validatePublicUrl(params.url);
+          let url = validatePublicUrl(params.url);
           if (signal?.aborted) throw new Error("Page read cancelled.");
           const py = resolvePython();
           const maxChars = Math.min(MAX_TEXT, Math.max(1000, Number(params.maxChars) || MAX_TEXT));
           const env = buildBrowserEnv();
+          if (isGoogleGotoUrl(url)) {
+            await startBrowser();
+            const resolved = await runPythonScript(py, ["resolve_goto", url], { env, signal, timeout: 90000, scriptPath: BROWSER_USE_SCRIPT_PATH });
+            if (!resolved?.ok || !resolved.url) {
+              return toolResult(`Seite konnte nicht gelesen werden: ${resolved?.error ?? "Google-Weiterleitung nicht auflösbar"}`, resolved ?? { ok: false });
+            }
+            url = validatePublicUrl(resolved.url);
+          }
           const response = await runPythonScript(py, ["read_page", url, String(maxChars)], {
             env,
             signal,
