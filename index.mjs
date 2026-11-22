@@ -401,8 +401,6 @@ export default {
           query: { type: "string", description: "The search query." },
           engine: { type: "string", enum: Object.keys(ENGINES), default: "google", description: "Search engine. Defaults to Google. Choose a regional engine when the requested sources or language call for it." },
           limit: { type: "integer", minimum: 1, maximum: 20, default: 10, description: "Maximum number of results." },
-          language: { type: "string", description: "Optional language hint, e.g. zh-CN, ja, ko, ru." },
-          region: { type: "string", description: "Optional region hint, e.g. CN, JP, KR, RU." }
         },
         required: ["query"]
       },
