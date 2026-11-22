@@ -1550,6 +1550,17 @@ try {
           approx = true;
         }
       }
+      let gotoUrl = '';
+      if (!href || approx) {
+        for (const a of [own, ...card.querySelectorAll('a')]) {
+          if (!a) continue;
+          try {
+            const r = new URL(a.getAttribute('href') || '', location.href);
+            if (/^\/goto\/?$/.test(r.pathname) && /(^|\.)google\./i.test(r.hostname)) { gotoUrl = r.href; break; }
+          } catch (e) {}
+        }
+      }
+      if (!href && gotoUrl && citeHost) { href = 'https://' + citeHost; approx = true; }
       if (!href) { rejects.push({ title, why: 'no external url' }); continue; }
       if (seenUrls.has(href)) { rejects.push({ title, why: 'duplicate' }); continue; }
 
@@ -1573,7 +1584,7 @@ try {
         anchorsDebug = Array.from(card.querySelectorAll('a, [role="link"], [data-href], [data-url]')).slice(0, 6)
           .map(el => (el.outerHTML || '').replace(/>[\s\S]*$/, '>').replace(/\s+/g, ' ').slice(0, 400));
       }
-      items.push({ title: title, url: href, snippet: snippet || '', site: site, date: date || null, isOfficial: isOfficial, approx_url: approx || undefined, anchors_debug: anchorsDebug });
+      items.push({ title: title, url: href, snippet: snippet || '', site: site, date: date || null, isOfficial: isOfficial, approx_url: approx || undefined, goto_url: gotoUrl || undefined, anchors_debug: anchorsDebug });
       if (items.length >= limit) break;
     }
     if (items.length === 0) googleRejects = rejects.slice(0, 20);
@@ -2031,6 +2042,52 @@ def cmd_search(browser, args):
         _search_locked(browser, args)
 
 
+def _resolve_goto_urls(browser, items, per_item_timeout=5.0):
+    """Google hides result targets behind opaque /goto?url=TOKEN redirects.
+    Open each such link in a throw-away tab and read the final URL."""
+    google_host = re.compile(r"^https?://([^/]*\.)?(google|gstatic)\.[a-z.]+(/|$)", re.I)
+    for item in items:
+        goto = item.get("goto_url")
+        if not goto:
+            continue
+        tab = None
+        try:
+            tab = browser.new_tab()
+            try:
+                apply_request_user_agent(tab)
+            except Exception:
+                pass
+            try:
+                tab.set.load_mode.none()
+            except Exception:
+                pass
+            tab.get(goto)
+            deadline = time.time() + per_item_timeout
+            final = ""
+            while time.time() < deadline:
+                try:
+                    current = tab.url or ""
+                except Exception:
+                    current = ""
+                if current.startswith("http") and not google_host.match(current):
+                    final = current
+                    break
+                time.sleep(0.15)
+            if final:
+                item["url"] = final
+                item.pop("approx_url", None)
+                item.pop("anchors_debug", None)
+        except Exception:
+            pass
+        finally:
+            if tab is not None:
+                try:
+                    tab.close()
+                except Exception:
+                    pass
+        item.pop("goto_url", None)
+
+
 def _search_locked(browser, args):
     if not args:
         fail(
@@ -2194,6 +2251,7 @@ def _search_locked(browser, args):
 
         results = _apply_domain_diversity(results, max_per_domain=2)
         results = results[:limit]
+        _resolve_goto_urls(browser, results)
 
         top_content = None
         if fetch_top and results:
