@@ -428,9 +428,9 @@ export default {
       },
       async execute(_toolCallId, params, signal) {
         const query = String(params.query ?? "").trim();
-        if (!query) return toolResult("Suche fehlgeschlagen: query is required", { ok: false });
+        if (!query) return "Suche fehlgeschlagen: query is required";
         const engine = String(params.engine ?? "google").toLowerCase();
-        if (!ENGINES[engine]) return toolResult(`Suche fehlgeschlagen: Unsupported engine: ${engine}`, { ok: false, engines: Object.keys(ENGINES) });
+        if (!ENGINES[engine]) return `Suche fehlgeschlagen: Unsupported engine: ${engine}`;
         const limit = Math.min(20, Math.max(1, Number(params.limit) || 10));
         try {
           if (signal?.aborted) throw new Error("Search cancelled.");
@@ -440,9 +440,9 @@ export default {
           const args = ["search", query, "--engine", engine, "--no-fallback", "--limit", String(limit)];
           const response = await runPythonScript(py, args, { env, timeout: 150000, scriptPath: BROWSER_USE_SCRIPT_PATH });
           recordActivity();
-          return toolResult(formatSearchText(response, query, engine));
+          return formatSearchText(response, query, engine);
         } catch (error) {
-          return toolResult(`Suche fehlgeschlagen: ${String(error?.message ?? error)}`, { ok: false, engine, query, diagnostic: stderrTail.slice(-1000) });
+          return `Suche fehlgeschlagen: ${String(error?.message ?? error)}`;
         }
       }
     });
