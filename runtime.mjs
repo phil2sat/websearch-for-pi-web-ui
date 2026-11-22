@@ -293,6 +293,7 @@ export default {
     mkdirSync(profileDir, { recursive: true });
 
     let cdpPort = DEFAULT_BROWSER_PORT;
+    let browserStarted = false;
     let stderrTail = "";
     let starting = null;
     let disposed = false;
@@ -306,6 +307,7 @@ export default {
         stderrTail = diagnostic;
         await waitForBrowser();
         cdpPort = DEFAULT_BROWSER_PORT;
+        browserStarted = true;
       })();
       try { await starting; } finally { starting = null; }
     }
@@ -465,8 +467,11 @@ export default {
           unregister?.();
         } catch {}
       }
-      try { await runBrowserScript("quit", profileDir); }
-      catch (error) { host.log?.("warn", "Chromium shutdown failed: " + String(error?.message ?? error)); }
+      if (browserStarted) {
+        try { await runBrowserScript("quit", profileDir); }
+        catch (error) { host.log?.("warn", "Chromium shutdown failed: " + String(error?.message ?? error)); }
+        browserStarted = false;
+      }
       cdpPort = DEFAULT_BROWSER_PORT;
     };
   }
