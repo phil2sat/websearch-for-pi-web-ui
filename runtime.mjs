@@ -289,9 +289,8 @@ export default {
     readSettings();
     host.onSettingsChanged?.(readSettings);
 
-    const stateDir = join(host.dataDir || homedir(), "websearch-for-pi-web-ui");
-    const profileDir = join(stateDir, "chromium-profile");
-    mkdirSync(stateDir, { recursive: true });
+    const profileDir = join(host.dataDir || homedir(), "browser-use-chrome-data");
+    mkdirSync(profileDir, { recursive: true });
 
     let cdpPort = DEFAULT_BROWSER_PORT;
     let stderrTail = "";
