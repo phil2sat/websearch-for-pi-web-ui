@@ -28,10 +28,10 @@ Alternatively, clone it into `<dataDir>/plugins/websearch` and reload plugins.
 
 Searches only the selected engine. Google is the default; blocked or empty results are reported without silently switching engines. The **Debug output** plugin setting selects one of two independent search generators:
 
-- **Off — version 0.1.35 generator:** the Python backend generates numbered titles, original result URLs, and page descriptions/snippets as plain text.
-- **On — version 0.1.33 generator:** the Python backend generates the structured JSON search result, including engine response data, attempts, fallback information, parser diagnostics, and extracted results.
+- **Off — version 0.1.35 generator:** the Python backend writes numbered titles, original result URLs, and page descriptions/snippets as plain text. This path uses the original 0.1.35 formatting and does not emit a JSON wrapper.
+- **On — version 0.1.29 generator:** the Python backend emits the original structured JSON payload, including `formatted_results`, engine metadata, fallback information, time range, page, result count, instant answer, related queries, extracted top content, result objects, and parser attempts. The original URL-resolution diagnostics are retained.
 
-The runtime returns the selected generator's stdout unchanged. It does not parse and re-serialize JSON, wrap text in JSON, or format JSON as plain text.
+Both generators are separate output branches in `scripts/dp_browser.py`. The `--output json|text` argument selects exactly one branch. The runtime passes the selected stdout through unchanged; it does not convert, normalize, or reformat either output. The **Debug output** setting is read when each search starts, so changing the checkbox affects the next search without restarting the plugin.
 
 Parameters:
 - `query` (required)
@@ -82,6 +82,6 @@ Search execution, result extraction, engine-specific selectors, and browser conn
 
 ### Debug output setting synchronization
 
-The `debugOutput` setting is initialized from `host.getSettings()` during activation and updated through `host.onSettingsChanged()`. Search execution uses this synchronized runtime value; it does not re-read a potentially stale settings snapshot for each invocation.
+The `debugOutput` setting is initialized from `host.getSettings()` during activation, updated through `host.onSettingsChanged()`, and re-read from `host.getSettings()` when each search starts. The persisted checkbox value selects the output branch for the next invocation.
 
 

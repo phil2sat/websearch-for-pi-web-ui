@@ -432,8 +432,8 @@ export default {
     const offSearch = host.registerAgentTool({
       name: "search_web",
       label: "Web Search",
-      description: "Search the public web using locally managed headless Chromium. Google is the default. Select Baidu or Sogou for Chinese-language sources, Naver for Korean, Yahoo Japan for Japanese, and Yandex for Russian. Debug output OFF selects the independent plain-text generator from version 0.1.35. Debug output ON selects the independent JSON generator from version 0.1.33. Both generator outputs are returned unchanged. No search API is used.",
-      promptSnippet: "Search the public web through local headless Chromium. Follow the plugin Debug output setting exactly: OFF selects the version 0.1.35 plain-text generator; ON selects the version 0.1.33 JSON generator. Return the selected generator output unchanged. Never convert one output mode into the other.",
+      description: "Search the public web using locally managed headless Chromium. Google is the default. Select Baidu or Sogou for Chinese-language sources, Naver for Korean, Yahoo Japan for Japanese, and Yandex for Russian. Debug output OFF selects the independent plain-text generator from version 0.1.35. Debug output ON selects the independent JSON generator from version 0.1.29. Both generator outputs are returned unchanged. No search API is used.",
+      promptSnippet: "Search the public web through local headless Chromium. Follow the plugin Debug output setting exactly: OFF selects the version 0.1.35 plain-text generator; ON selects the version 0.1.29 JSON generator. Return the selected generator output unchanged. Never convert one output mode into the other.",
       promptGuidelines: ENGINE_GUIDANCE,
       parameters: {
         type: "object",
