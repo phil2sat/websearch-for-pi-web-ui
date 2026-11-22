@@ -77,7 +77,7 @@ function decode(buf) {
   }
 }
 
-function runPythonScript(pyExecutable, scriptArgs, { env = {}, timeout = DEFAULT_BROWSER_TIMEOUT_MS, signal, scriptPath = BROWSER_USE_SCRIPT_PATH } = {}) {
+function runPythonScript(pyExecutable, scriptArgs, { env = {}, timeout = DEFAULT_BROWSER_TIMEOUT_MS, signal, scriptPath = BROWSER_USE_SCRIPT_PATH, rawOutput = false } = {}) {
   return new Promise((resolve, reject) => {
     const childEnv = {
       ...process.env,
@@ -99,6 +99,13 @@ function runPythonScript(pyExecutable, scriptArgs, { env = {}, timeout = DEFAULT
         const stdoutText = decode(stdout).trim();
         const stderrText = decode(stderr).trim();
         if (err) {
+          if (rawOutput && stdoutText) {
+            try {
+              JSON.parse(stdoutText);
+              resolve(stdoutText);
+              return;
+            } catch {}
+          }
           if (stdoutText.startsWith("{")) {
             try {
               const parsed = JSON.parse(stdoutText);
@@ -116,8 +123,12 @@ function runPythonScript(pyExecutable, scriptArgs, { env = {}, timeout = DEFAULT
           if (stderrText) {
             reject(new Error(`browser_use runtime returned no output: ${stderrText.slice(-300)}`));
           } else {
-            resolve({ ok: true });
+            resolve(rawOutput ? "" : { ok: true });
           }
+          return;
+        }
+        if (rawOutput) {
+          resolve(stdoutText);
           return;
         }
         const startIdx = stdoutText.lastIndexOf("\n{");
@@ -458,11 +469,14 @@ export default {
           const py = resolvePython();
           const env = { ...buildBrowserEnv(), DP_DEFAULT_ENGINE: engine };
           const args = ["search", query, "--engine", engine, "--no-fallback", "--limit", String(limit), "--output", outputMode];
-          const response = await runPythonScript(py, args, { env, timeout: 150000, scriptPath: BROWSER_USE_SCRIPT_PATH });
+          const generatedOutput = await runPythonScript(py, args, {
+            env,
+            timeout: 150000,
+            scriptPath: BROWSER_USE_SCRIPT_PATH,
+            rawOutput: true,
+          });
           recordActivity();
-          return useDebugOutput
-            ? JSON.stringify(response, null, 2)
-            : formatSearchText(response, query, engine);
+          return generatedOutput;
         } catch (error) {
           return `Suche fehlgeschlagen: ${String(error?.message ?? error)}`;
         }
