@@ -80,6 +80,11 @@ Search execution, result extraction, engine-specific selectors, and browser conn
 The `debugOutput` setting is read through the plugin settings API (`host.getSettings()`), not the plugin storage API. The current value is refreshed for every search invocation, so switching the setting reliably changes the output mode without relying on stale in-memory state.
 
 
-### Output mode behavior (0.1.38)
+### Output mode behavior (0.1.39)
 
-The **Debug output** setting selects the actual `search_web` tool payload. Disabled returns only formatted result text. Enabled returns the complete diagnostic JSON as a text content block, and the agent instructions require that JSON to be reproduced verbatim rather than summarized or converted back to plain text. The setting is refreshed for each search invocation.
+The **Debug output** setting selects the backend generation path before search results are emitted. The runtime passes `--output text` or `--output json` to `scripts/dp_browser.py` for every search invocation.
+
+- `text`: the Python backend generates the formatted title, original URL, and snippet output used by version 0.1.35.
+- `json`: the Python backend emits a structured diagnostics object directly from the search execution, preserving engine response data, attempts, fallback information, parser diagnostics, and extracted results as used by version 0.1.33.
+
+These are separate generation and output paths. JSON mode does not serialize, wrap, or reconstruct the plain-text output. The runtime returns the JSON payload as JSON text without changing its structure.
