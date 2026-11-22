@@ -8,9 +8,10 @@ No hosted search API, API key, external MCP service, Playwright install, or manu
 
 - pi-web-ui with plugin API v2
 - Node.js 22.19+
-- A Chromium-based browser executable installed on the host (Chromium, Chrome, or Edge)
+- Python 3 with `venv` and `pip`
+- A Chromium-based browser supported by DrissionPage (Chromium or Chrome)
 
-The plugin discovers common executable paths automatically. Set `chromiumPath` in plugin settings if discovery does not find your binary.
+On first use, the plugin creates a local `.venv` and installs `DrissionPage` if it is not already available in the active Python interpreter. The browser is started through the same `ChromiumOptions().set_local_port(9333)` and `Chromium(options)` flow used by pi-web-ui `browser_use`.
 
 ## Install
 
@@ -51,8 +52,10 @@ The plugin launches `mcp-server.mjs` with Node.js and connects over stdio JSON-R
 ## Runtime behavior
 
 - The MCP stdio server starts when the plugin activates; Chromium starts on the first browser tool call.
-- A private ephemeral CDP port is allocated by Chromium using `--remote-debugging-port=0`.
-- The browser profile is persistent under `<dataDir>/websearch-for-pi-web-ui/chromium-profile`.
+- Chromium is managed by DrissionPage on the fixed local port `9333`, matching pi-web-ui `browser_use`.
+- The browser profile is persistent under `<dataDir>/browser-use-chrome-data`, matching pi-web-ui `browser_use`.
+- `DP_BROWSER_PORT`, `DP_USER_DATA`, and `DP_HEADLESS` are passed to the bootstrap process using the same environment contract as `browser_use`.
+- Chromium is not spawned or discovered directly by the Node.js runtime; DrissionPage owns startup and shutdown.
 - Search and read operations use isolated tabs and close them after extraction.
 - The MCP child process and Chromium process are stopped when the plugin is deactivated.
 - Chromium stderr is retained only as a short diagnostic tail; page content is returned as bounded text.
