@@ -24,7 +24,7 @@ const ENGINE_GUIDANCE = [
   "If an engine presents CAPTCHA, unusual-traffic, or bot-verification content, report the block; do not claim that no results exist.",
   "Use read_url to inspect promising result pages. Preserve the returned URLs as source references.",
   "Result URLs pointing to google.*/goto are Google redirect links: pass them unchanged to read_url, which resolves them to the real page. Name the source by the site shown after the title.",
-  "The search_web output mode is controlled by the plugin setting Debug output. In plain-text mode, use only title, original result URL, and page description/snippet. In debug mode, inspect the complete JSON including attempts, parser diagnostics, and engine details.",
+  "The search_web output mode is controlled by the plugin setting Debug output. When disabled, present only title, original result URL, and page description/snippet. When enabled, reproduce the complete JSON returned by search_web verbatim as the final answer. Do not summarize, convert it to plain text, omit fields, or reformat it.",
 ];
 
 const MAX_TEXT = 18000;
@@ -420,7 +420,7 @@ export default {
     const offSearch = host.registerAgentTool({
       name: "search_web",
       label: "Web Search",
-      description: "Search the public web using locally managed headless Chromium. Google is the default. Select Baidu or Sogou for Chinese-language sources, Naver for Korean, Yahoo Japan for Japanese, and Yandex for Russian. Returns plain-text results by default. When Debug output is enabled in plugin settings, returns complete JSON diagnostics including engine responses and parser details. No search API is used.",
+      description: "Search the public web using locally managed headless Chromium. Google is the default. Select Baidu or Sogou for Chinese-language sources, Naver for Korean, Yahoo Japan for Japanese, and Yandex for Russian. Debug output OFF: returns plain-text titles, original URLs, and snippets. Debug output ON: returns the complete JSON diagnostics. In JSON mode, reproduce the returned JSON verbatim; do not summarize or convert it to plain text. No search API is used.",
       promptSnippet: "search the public web through local headless Chromium and present each result as a link followed by its description",
       promptGuidelines: ENGINE_GUIDANCE,
       parameters: {
@@ -451,7 +451,9 @@ export default {
           const args = ["search", query, "--engine", engine, "--no-fallback", "--limit", String(limit)];
           const response = await runPythonScript(py, args, { env, timeout: 150000, scriptPath: BROWSER_USE_SCRIPT_PATH });
           recordActivity();
-          return useDebugOutput ? JSON.stringify(response, null, 2) : formatSearchText(response, query, engine);
+          return useDebugOutput
+            ? toolResult(JSON.stringify(response, null, 2))
+            : formatSearchText(response, query, engine);
         } catch (error) {
           return `Suche fehlgeschlagen: ${String(error?.message ?? error)}`;
         }
