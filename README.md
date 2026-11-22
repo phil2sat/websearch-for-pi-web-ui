@@ -1,21 +1,19 @@
 # Local Chromium Web Search for pi-web-ui
 
-A pi-web-ui plugin that supervises a local stdio MCP server and a locally launched headless Chromium. Google is the default engine; the model can explicitly select Baidu, Bing, DuckDuckGo, Sogou, Yandex, Naver, or Yahoo Japan.
+A native pi-web-ui plugin that registers its tools and browser lifecycle directly with the plugin host. Google is the default search engine; the model can explicitly select Baidu, Bing, DuckDuckGo, Sogou, Yandex, Naver, or Yahoo Japan.
 
-No hosted search API, API key, external MCP service, Playwright install, or manually managed browser process is required. The plugin starts the MCP child process, proxies its tools into pi-web-ui, and the MCP runtime starts and manages Chromium on the first browser request.
+No hosted search API, API key, external MCP service, Playwright install, or separately managed browser process is required.
 
 ## Requirements
 
 - pi-web-ui with plugin API v2
 - Node.js 22.19+
 - Python 3 with `venv` and `pip`
-- A Chromium-based browser supported by DrissionPage (Chromium or Chrome)
+- A Chromium-based browser supported by DrissionPage
 
-On first use, the plugin creates a local `.venv` and installs `DrissionPage` if it is not already available in the active Python interpreter. The browser is started through the same `ChromiumOptions().set_local_port(9333)` and `Chromium(options)` flow used by pi-web-ui `browser_use`.
+On first use, the plugin creates a local `.venv` and installs DrissionPage if it is not available in the active Python interpreter.
 
 ## Install
-
-Install directly from GitHub:
 
 ```bash
 pi-web-ui install phil2sat/websearch-for-pi-web-ui --name websearch
@@ -33,9 +31,6 @@ Parameters:
 - `query` (required)
 - `engine` (optional): `google` (default), `bing`, `duckduckgo`, `baidu`, `sogou`, `yandex`, `naver`, `yahoo_japan`
 - `limit` (optional, 1–20; default 10)
-- `language` and `region` (optional hints)
-
-The model should select Baidu or Sogou for Chinese-language sites, Naver for Korean sources, Yahoo Japan for Japanese sources, and Yandex for Russian sources. Explicit engine requests always take precedence.
 
 ### `read_url`
 
@@ -43,27 +38,33 @@ Opens a public HTTP(S) page in Chromium and returns its title, final URL, and re
 
 ### `browser_status`
 
-Reports whether Chromium is running, its DrissionPage-managed port, profile directory, and CDP readiness. It starts Chromium lazily if needed.
+Reports Chromium process state, CDP readiness, port, profile directory, and headless mode. It starts Chromium lazily if needed.
 
-## MCP integration
+## Browser lifecycle
 
-The plugin launches `mcp-server.mjs` with Node.js and connects over stdio JSON-RPC. The MCP server implements `initialize`, `tools/list`, and `tools/call`; pi-web-ui exposes the advertised tools as ordinary agent tools under the `mcp__websearch` namespace. The MCP process is supervised by the plugin lifecycle, so no `mcp.json` entry or separately started service is needed. The same MCP entry point can also be launched by another MCP host with Node.js.
+Browser lifecycle management is implemented in `runtime.mjs` using the same `browser_use` host lifecycle pattern:
+
+- `resolvePython()` selects the plugin virtual environment, configured Python, or system Python.
+- `runPythonScript()` executes the DrissionPage backend with `execFile()`.
+- `buildBrowserEnv()` supplies `DP_BROWSER_PORT`, `DP_USER_DATA`, and `DP_HEADLESS`.
+- `syncBackgroundTask()` registers the persistent browser task with the actual pi-web-ui host.
+- `recordActivity()`, `armIdleTimer()`, and `closeBrowserDueToIdle()` maintain the idle timeout.
+- `quitBrowser()` stops the DrissionPage browser and removes its background task.
+- The task uses the stable ID `browser-instance`, a 3-second health interval, and two consecutive failures before removal.
+
+The plugin entry point exports `runtime.mjs` directly. There is no MCP child process, proxy host, synthetic host object, or secondary lifecycle boundary. Consequently, `host.registerBackgroundTask` is called in the same plugin activation context as the native `browser_use` plugin.
 
 ## Runtime behavior
 
-- The MCP stdio server starts when the plugin activates; Chromium starts on the first browser tool call.
-- Chromium is managed by DrissionPage on the fixed local port `9333`, matching pi-web-ui `browser_use`.
-- The browser profile is persistent under `<dataDir>/browser-use-chrome-data`, matching pi-web-ui `browser_use`.
-- `DP_BROWSER_PORT`, `DP_USER_DATA`, and `DP_HEADLESS` are passed to the bootstrap process using the same environment contract as `browser_use`.
-- Chromium is not spawned or discovered directly by the Node.js runtime; DrissionPage owns startup and shutdown.
-- Search and read operations use isolated CDP tabs and close them after extraction; Chromium itself is started and stopped through the DrissionPage bootstrap.
-- The MCP child process and Chromium process are stopped when the plugin is deactivated.
-- Chromium stderr is retained only as a short diagnostic tail; page content is returned as bounded text.
+- Chromium starts on the first browser tool call.
+- DrissionPage manages Chromium on port `9333`.
+- The persistent profile is `<dataDir>/browser-use-chrome-data`.
+- Search and read operations use isolated CDP tabs and close them after extraction.
+- The host background task monitors the Chromium port every 3 seconds.
+- Chromium is stopped on idle timeout or plugin deactivation.
 - Browser requests are intercepted through CDP; non-HTTP(S), local, and DNS-resolved private network destinations are blocked.
-- CAPTCHA / bot-check pages are reported as blocked; the plugin does not claim they are search results.
+- CAPTCHA and bot-check pages are reported as blocked.
 
 ## Notes
 
-Search-engine HTML changes over time. The extractor uses engine-specific selectors with a generic fallback. Google remains the default; selecting another engine is a model decision through the `engine` parameter.
-
-This plugin automates ordinary browser navigation. Respect each search engine's terms, access controls, and rate limits.
+Search-engine HTML changes over time. The extractor uses engine-specific selectors with a generic fallback. Respect each search engine's terms, access controls, and rate limits.
