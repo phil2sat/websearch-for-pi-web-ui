@@ -1532,6 +1532,7 @@ try {
       const title = textOf(heading, 200);
       if (!title || title.length < 3) { rejects.push({ title: title || '', why: 'no title' }); continue; }
       if (heading.closest('nav, header, footer, [role="navigation"], #tads, #tadsb, #bottomads, [data-text-ad], [data-is-ad]')) { rejects.push({ title, why: 'nav/ad' }); continue; }
+      if (/^(Antwort des KI-Modus|KI-Übersicht|KI-Modus|AI Overview|AI Mode|AI-generated)/i.test(title)) { rejects.push({ title, why: 'ai block' }); continue; }
       const card = cardFor(heading);
 
       let href = '';
@@ -2053,30 +2054,43 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 _GOOGLE_HOST_RE = re.compile(r"^https?://([^/]*\.)?(google|gstatic)\.[a-z.]+(/|$)", re.I)
 
 
+def _meta_refresh(body):
+    """Return (delay_seconds, target) from <meta http-equiv=refresh content="N;url=..."> in any attribute order."""
+    for tag in re.findall(r"<meta\b[^>]*>", body, re.I):
+        if not re.search(r'http-equiv\s*=\s*["\']?refresh', tag, re.I):
+            continue
+        m = re.search(r'content\s*=\s*["\']\s*(\d+(?:\.\d+)?)\s*;\s*url\s*=\s*([^"\']+)', tag, re.I)
+        if m:
+            return float(m.group(1)), m.group(2).strip().replace("&amp;", "&")
+    return 0.0, ""
+
+
 def _body_target(body):
-    """Extract a redirect target from a 200 interstitial page."""
+    """Extract a redirect target from a 200 interstitial page. Returns (delay, target)."""
+    delay, target = _meta_refresh(body)
+    if target:
+        return delay, target
     body = body.replace("\\/", "/").replace("&amp;", "&")
     body = re.sub(r"\\x([0-9a-fA-F]{2})", lambda m: chr(int(m.group(1), 16)), body)
     body = re.sub(r"\\u([0-9a-fA-F]{4})", lambda m: chr(int(m.group(1), 16)), body)
     for pat in (
-        r'http-equiv=["\']refresh["\'][^>]*url=([^"\'>\s]+)',
         r'location(?:\.href|\.replace\()?\s*=?\s*\(?["\'](https?://[^"\']+)',
         r'<a[^>]+href=["\'](https?://[^"\']+)',
     ):
         m = re.search(pat, body, re.I)
         if m and not _GOOGLE_HOST_RE.match(m.group(1)):
-            return m.group(1)
-    return ""
+            return 0.0, m.group(1)
+    return 0.0, ""
 
 
-def _resolve_one_goto(goto, user_agent, cookie_header, referer, timeout):
+def _resolve_one_goto(goto, user_agent, cookie_header, referer, timeout, max_wait=12.0):
     """Follow Google's /goto redirect with plain GETs (no browser tab, no page load).
     Only Location headers / interstitial bodies are read; the target site is never contacted.
     Returns (final_url, debug_text)."""
     opener = urllib.request.build_opener(_NoRedirect)
     url = goto
     trace = []
-    for _ in range(4):
+    for _ in range(5):
         headers = {
             "User-Agent": user_agent,
             "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
@@ -2090,8 +2104,10 @@ def _resolve_one_goto(goto, user_agent, cookie_header, referer, timeout):
         try:
             resp = opener.open(urllib.request.Request(url, headers=headers), timeout=timeout)
             body = resp.read(65536).decode("utf-8", "replace")
-            location = _body_target(body)
-            trace.append(f"HTTP {resp.status} body-target={location[:120] or 'none'} body={re.sub(chr(10), ' ', body)[:120]!r}")
+            delay, location = _body_target(body)
+            trace.append(f"HTTP {resp.status} wait={delay:g}s target={location[:100] or 'none'} body={re.sub(chr(10), ' ', body)[:100]!r}")
+            if location and delay > 0:
+                time.sleep(min(delay, max_wait) + 0.2)
         except urllib.error.HTTPError as e:
             loc = e.headers.get("Location", "")
             trace.append(f"HTTP {e.code} Location={loc[:160] or 'none'}")
@@ -2116,23 +2132,23 @@ def _resolve_one_goto(goto, user_agent, cookie_header, referer, timeout):
     return "", " > ".join(trace)
 
 
-def _resolve_goto_urls(items, user_agent, cookie_header="", referer="", timeout=6.0):
-    pending = [it for it in items if it.get("goto_url")]
-    if pending:
-        from concurrent.futures import ThreadPoolExecutor
-
-        with ThreadPoolExecutor(max_workers=min(3, len(pending))) as pool:
-            finals = list(pool.map(
-                lambda it: _resolve_one_goto(it["goto_url"], user_agent, cookie_header, referer, timeout),
-                pending,
-            ))
-        for it, (final, trace) in zip(pending, finals):
-            if final:
-                it["url"] = final
-                it.pop("approx_url", None)
-                it.pop("anchors_debug", None)
-            else:
-                it["resolve_debug"] = f"cookies={'ja' if cookie_header else 'NEIN'} | {trace}"
+def _resolve_goto_urls(items, user_agent, cookie_header="", referer="", timeout=8.0, budget=40.0):
+    """Resolve Google /goto links one after another (parallel requests make Google raise its wait time)."""
+    started = time.time()
+    for it in items:
+        goto = it.get("goto_url")
+        if not goto:
+            continue
+        if time.time() - started > budget:
+            it["resolve_debug"] = "Zeitbudget für URL-Auflösung aufgebraucht"
+            continue
+        final, trace = _resolve_one_goto(goto, user_agent, cookie_header, referer, timeout)
+        if final:
+            it["url"] = final
+            it.pop("approx_url", None)
+            it.pop("anchors_debug", None)
+        else:
+            it["resolve_debug"] = f"cookies={'ja' if cookie_header else 'NEIN'} | {trace}"
     for it in items:
         it.pop("goto_url", None)
 

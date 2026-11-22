@@ -416,7 +416,7 @@ export default {
           const py = resolvePython();
           const env = { ...buildBrowserEnv(), DP_DEFAULT_ENGINE: engine };
           const args = ["search", query, "--engine", engine, "--no-fallback", "--limit", String(limit)];
-          const response = await runPythonScript(py, args, { env, scriptPath: BROWSER_USE_SCRIPT_PATH });
+          const response = await runPythonScript(py, args, { env, timeout: 150000, scriptPath: BROWSER_USE_SCRIPT_PATH });
           recordActivity();
           return toolResult(formatSearchText(response, query, engine), response);
         } catch (error) {
