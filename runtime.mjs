@@ -35,8 +35,9 @@ function clip(value, max = MAX_TEXT) {
   return text.length > max ? text.slice(0, max) + "\n… [content truncated]" : text;
 }
 
-function toolResult(text, details) {
-  return { content: [{ type: "text", text: String(text ?? "") }], details: details ?? {} };
+// Plain text only: the WebUI renders `details` as raw JSON, so it is kept empty.
+function toolResult(text) {
+  return { content: [{ type: "text", text: String(text ?? "") }], details: {} };
 }
 
 function formatSearchText(response, query, engine) {
