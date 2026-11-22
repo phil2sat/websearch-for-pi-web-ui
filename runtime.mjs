@@ -420,7 +420,7 @@ export default {
               const after = details?.after;
               const consentCleared = details?.consentClick?.clicked === true &&
                 typeof after?.url === "string" &&
-                !/consent\\.google\\.com|\\/consent(?:\\/|\\?|$)/i.test(after.url) &&
+                !/consent\.google\.com|\/consent(?:\/|\?|$)/i.test(after.url) &&
                 after?.consentSignals?.knownButtonId !== true &&
                 after?.consentSignals?.consentHost !== true;
               if (consentCleared) {
