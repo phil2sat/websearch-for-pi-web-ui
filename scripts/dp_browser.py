@@ -1542,7 +1542,31 @@ try {
       instantAnswer: instantAnswer,
       count: 0,
       related_queries: relatedQueries,
-      results: []
+      results: [],
+      debug: {
+        page_url: location.href,
+        page_title: document.title || '',
+        body_text: (document.body?.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 1800),
+        headings: Array.from(document.querySelectorAll('h1,h2,h3'))
+          .map(el => (el.innerText || '').replace(/\\s+/g, ' ').trim())
+          .filter(Boolean)
+          .slice(0, 20),
+        result_links: Array.from(document.querySelectorAll('a[href]'))
+          .filter(a => a.querySelector('h3') || a.closest('#search .g, #rso > div, [data-sokoban-container]'))
+          .map(a => ({
+            title: (a.innerText || a.querySelector('h3')?.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 160),
+            url: a.href
+          }))
+          .filter(a => a.title && /^https?:/.test(a.url) && !/google\\.(com|de)\\//i.test(a.url))
+          .slice(0, 20),
+        selectors: {
+          old_google_cards: document.querySelectorAll('#search .g, div.g:not(.g-blk), #rso > div.MjjYud').length,
+          rso_children: document.querySelectorAll('#rso > *').length,
+          headings: document.querySelectorAll('#search h3, #rso h3, h3').length,
+          external_links: Array.from(document.querySelectorAll('a[href^="http"]'))
+            .filter(a => !/google\\.(com|de)\\//i.test(a.href)).length
+        }
+      }
     });
   }
 
@@ -2057,7 +2081,10 @@ def _search_locked(browser, args):
         results = res.get("results") or []
         if not results:
             empty_note = "该引擎确实没有结果" if res.get("declared_empty") else "版式变化，未解析到结果"
-            attempts.append({"engine": eng, "kind": "empty", "reason": empty_note})
+            attempt = {"engine": eng, "kind": "empty", "reason": empty_note}
+            if res.get("debug"):
+                attempt["debug"] = res["debug"]
+            attempts.append(attempt)
             if not fallback_from and eng != candidate_engines[-1]:
                 fallback_from = eng
             continue
