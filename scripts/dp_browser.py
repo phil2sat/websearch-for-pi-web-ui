@@ -1240,11 +1240,14 @@ try {
   function cleanUrl(href, card) {
     if (!href) return '';
     try {
-      // 1. Google 跳转解码
-      if (href.includes('google.com/url?') || href.includes('google.com.hk/url?')) {
-        const u = new URL(href);
-        const q = u.searchParams.get('url') || u.searchParams.get('q');
-        if (q && q.startsWith('http')) return q;
+      // Resolve relative links before inspecting search-engine redirects.
+      const resolved = new URL(href, location.href);
+      href = resolved.href;
+
+      // 1. Google redirect URLs, including regional domains such as google.de.
+      if (/^\\/url\\/?$/.test(resolved.pathname) && /(^|\\.)google\\./i.test(resolved.hostname)) {
+        const target = resolved.searchParams.get('url') || resolved.searchParams.get('q');
+        if (target && /^https?:\\/\\//i.test(target)) return target;
       }
       // 2. DuckDuckGo 跳转解码
       if (href.includes('uddg=')) {
@@ -1461,10 +1464,10 @@ try {
     const cards = document.querySelectorAll('#search .g, div.g:not(.g-blk), #rso > div.MjjYud');
     for (const card of cards) {
       if (isAdCard(card)) continue;
-      const linkEl = card.querySelector('a[href^="http"]:not([href*="google.com/search"])');
+      const linkEl = card.querySelector('h3 a[href], a[href]');
       if (!linkEl) continue;
-      const href = cleanUrl(linkEl.href, card);
-      if (!href || seenUrls.has(href)) continue;
+      const href = cleanUrl(linkEl.getAttribute('href'), card);
+      if (!href || !/^https?:\\/\\//i.test(href) || /(^|\\.)google\\.[a-z.]+\\//i.test(href) || seenUrls.has(href)) continue;
       seenUrls.add(href);
 
       const titleEl = card.querySelector('h3') || linkEl;
@@ -1483,12 +1486,12 @@ try {
 
   // 3. 通用自适应启发式兜底抽取器（Universal Heuristic Fallback）
   if (items.length === 0) {
-    const candidateHeadings = document.querySelectorAll('h2 a[href^="http"], h3 a[href^="http"], h4 a[href^="http"]');
+    const candidateHeadings = document.querySelectorAll('h2 a[href], h3 a[href], h4 a[href]');
     for (const linkEl of candidateHeadings) {
       if (linkEl.closest('nav, header, footer, aside, form, .nav, .menu')) continue;
       if (isAdCard(linkEl)) continue;
-      const href = cleanUrl(linkEl.href, linkEl.parentElement);
-      if (!href || seenUrls.has(href)) continue;
+      const href = cleanUrl(linkEl.getAttribute('href'), linkEl.parentElement);
+      if (!href || !/^https?:\\/\\//i.test(href) || /(^|\\.)google\\.[a-z.]+\\//i.test(href) || seenUrls.has(href)) continue;
 
       const title = textOf(linkEl, 150);
       if (!title || title.length < 3) continue;
