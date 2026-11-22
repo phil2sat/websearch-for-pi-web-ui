@@ -2,6 +2,7 @@ import plugin from "./runtime.mjs";
 
 const tools = new Map();
 let cleanup = null;
+let shuttingDown = false;
 let input = "";
 
 const host = {
@@ -90,6 +91,8 @@ async function handle(message) {
 }
 
 async function shutdown() {
+  if (shuttingDown) return;
+  shuttingDown = true;
   try {
     await cleanup?.();
   } catch (error) {
