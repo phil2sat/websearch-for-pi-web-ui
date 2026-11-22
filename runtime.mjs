@@ -50,10 +50,10 @@ function formatSearchText(response, query, engine) {
       const title = String(item.title ?? "Untitled").trim();
       const url = item.url.trim();
       const description = String(item.snippet ?? "").trim() || "Keine Beschreibung verfügbar.";
-      return `${index + 1}. ${title}\\n${url}\\n\\n${description}`;
+      return `${index + 1}. ${title}\n${url}\n\n${description}`;
     });
 
-  return entries.join("\\n\\n") || `Keine Ergebnisse für „${query}“ (${engine}).`;
+  return entries.join("\n\n") || `Keine Ergebnisse für „${query}“ (${engine}).`;
 }
 
 function resolvePython() {
