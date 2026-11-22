@@ -420,8 +420,8 @@ export default {
     const offSearch = host.registerAgentTool({
       name: "search_web",
       label: "Web Search",
-      description: "Search the public web using locally managed headless Chromium. Google is the default. Select Baidu or Sogou for Chinese-language sources, Naver for Korean, Yahoo Japan for Japanese, and Yandex for Russian. Debug output OFF: returns plain-text titles, original URLs, and snippets. Debug output ON: returns the complete JSON diagnostics. In JSON mode, reproduce the returned JSON verbatim; do not summarize or convert it to plain text. No search API is used.",
-      promptSnippet: "Search the public web through local headless Chromium. Follow the plugin Debug output setting exactly: OFF means formatted plain-text results; ON means reproduce the complete JSON tool response verbatim without summarizing or reformatting.",
+      description: "Search the public web using locally managed headless Chromium. Google is the default. Select Baidu or Sogou for Chinese-language sources, Naver for Korean, Yahoo Japan for Japanese, and Yandex for Russian. Debug output OFF: returns plain-text titles, original URLs, and snippets. Debug output ON: the Python search backend generates and returns raw JSON diagnostics directly from the search and parser data. Debug output OFF: the Python backend generates formatted plain-text results. No search API is used.",
+      promptSnippet: "Search the public web through local headless Chromium. Follow the plugin Debug output setting exactly: OFF selects the Python plain-text generation path; ON selects the separate Python JSON diagnostics generation path. Never convert one output mode into the other.",
       promptGuidelines: ENGINE_GUIDANCE,
       parameters: {
         type: "object",
@@ -447,12 +447,12 @@ export default {
             ? currentSettings.debugOutput
             : debugOutput;
           debugOutput = useDebugOutput;
-          const env = { ...buildBrowserEnv(), DP_DEFAULT_ENGINE: engine, DP_SEARCH_DEBUG: useDebugOutput ? "1" : "0" };
-          const args = ["search", query, "--engine", engine, "--no-fallback", "--limit", String(limit)];
+          const env = { ...buildBrowserEnv(), DP_DEFAULT_ENGINE: engine };
+          const args = ["search", query, "--engine", engine, "--no-fallback", "--limit", String(limit), "--output", useDebugOutput ? "json" : "text"];
           const response = await runPythonScript(py, args, { env, timeout: 150000, scriptPath: BROWSER_USE_SCRIPT_PATH });
           recordActivity();
           return useDebugOutput
-            ? toolResult(JSON.stringify(response, null, 2))
+            ? JSON.stringify(response, null, 2)
             : formatSearchText(response, query, engine);
         } catch (error) {
           return `Suche fehlgeschlagen: ${String(error?.message ?? error)}`;
