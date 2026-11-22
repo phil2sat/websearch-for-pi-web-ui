@@ -2394,6 +2394,19 @@ def _search_locked(browser, args):
                         except Exception:
                             pass
 
+        if os.environ.get("DP_SEARCH_DEBUG", "0").strip().lower() in ("1", "true", "yes", "on"):
+            out({
+                "ok": True,
+                "cmd": CMD,
+                "query": query,
+                "requested_engine": engine,
+                "used_engine": eng,
+                "fallback_from": fallback_from,
+                "attempts": attempts,
+                "results": results,
+                "engine_response": res,
+            })
+
         formatted_results = "\n\n".join(
             f"{index}. {item.get('title') or 'Untitled'}\n"
             f"{item.get('url')}\n\n"
@@ -2403,6 +2416,17 @@ def _search_locked(browser, args):
         )
         sys.stdout.write(formatted_results + "\n")
         sys.exit(0)
+
+    if os.environ.get("DP_SEARCH_DEBUG", "0").strip().lower() in ("1", "true", "yes", "on"):
+        out({
+            "ok": False,
+            "cmd": CMD,
+            "query": query,
+            "requested_engine": engine,
+            "fallback_from": fallback_from,
+            "attempts": attempts,
+            "error": _format_no_results(query, attempts),
+        })
 
     sys.stdout.write(_format_no_results(query, attempts) + "\n")
     sys.exit(0)
