@@ -26,7 +26,7 @@ Alternatively, clone it into `<dataDir>/plugins/websearch` and reload plugins.
 
 ### `search_web`
 
-Searches the selected engine and automatically tries the remaining configured engines when a page is blocked, empty, or cannot be parsed. Returns structured results (rank, title, URL, snippet).
+Searches only the selected engine. Google is the default; blocked or empty results are reported without silently switching engines. Returns structured results (rank, title, URL, snippet).
 
 Parameters:
 - `query` (required)
@@ -35,7 +35,7 @@ Parameters:
 
 ### `read_url`
 
-Opens a public HTTP(S) page in Chromium and returns its title, final URL, and readable body text. Local/private network destinations are rejected.
+Uses the vendored upstream `browser_use` `read_page` command to open a public HTTP(S) page and extract its title, final URL, and readable body text. Local/private network destinations are rejected.
 
 ### `browser_status`
 
@@ -60,7 +60,7 @@ The plugin entry point exports `runtime.mjs` directly. There is no MCP child pro
 - Chromium starts on the first browser tool call.
 - DrissionPage manages Chromium on port `9333`.
 - The persistent profile is `<dataDir>/browser-use-chrome-data`.
-- Search and read operations use isolated CDP tabs and close them after extraction.
+- Search and read operations run through the vendored upstream `dp_browser.py` commands. Search uses the upstream search-tab isolation behavior; `read_url` uses the upstream `read_page` extractor.
 - The host background task monitors the Chromium port every 3 seconds.
 - Chromium is stopped on idle timeout or plugin deactivation.
 - Browser requests are intercepted through CDP; non-HTTP(S), local, and DNS-resolved private network destinations are blocked.
@@ -73,4 +73,4 @@ Search-engine HTML changes over time. The extractor uses engine-specific selecto
 
 ## Search implementation
 
-Search execution, result extraction, engine-specific selectors, and browser connection use the vendored `scripts/dp_browser.py` implementation from `pi-web-ui` `browser_use` (reference revision `33c3f6c2d49f9f0a3c437df3bfe5e41d09bba355`). Google is the default. The selected engine is passed explicitly with `--no-fallback`, so the plugin never silently switches search engines. The browser lifecycle invokes the same script's `tabs` and `quit` commands; the separate bootstrap wrapper is no longer used.
+Search execution, result extraction, engine-specific selectors, and browser connection use the vendored `scripts/dp_browser.py` implementation from `pi-web-ui` `browser_use` (reference revision `33c3f6c2d49f9f0a3c437df3bfe5e41d09bba355`). Google is the default. The selected engine is passed explicitly with `--no-fallback`, so the plugin never silently switches search engines. The browser lifecycle invokes the same script's `tabs` and `quit` commands; `search_web` invokes `search`, and `read_url` invokes `read_page`. These operations use the upstream browser-control implementation.
