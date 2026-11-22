@@ -421,7 +421,7 @@ export default {
       name: "search_web",
       label: "Web Search",
       description: "Search the public web using locally managed headless Chromium. Google is the default. Select Baidu or Sogou for Chinese-language sources, Naver for Korean, Yahoo Japan for Japanese, and Yandex for Russian. Debug output OFF: returns plain-text titles, original URLs, and snippets. Debug output ON: returns the complete JSON diagnostics. In JSON mode, reproduce the returned JSON verbatim; do not summarize or convert it to plain text. No search API is used.",
-      promptSnippet: "search the public web through local headless Chromium and present each result as a link followed by its description",
+      promptSnippet: "Search the public web through local headless Chromium. Follow the plugin Debug output setting exactly: OFF means formatted plain-text results; ON means reproduce the complete JSON tool response verbatim without summarizing or reformatting.",
       promptGuidelines: ENGINE_GUIDANCE,
       parameters: {
         type: "object",
