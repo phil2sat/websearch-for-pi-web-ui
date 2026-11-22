@@ -23,6 +23,8 @@ const ENGINE_GUIDANCE = [
   "Honor the explicitly requested search engine. The engine parameter is optional and defaults to Google; never switch engines automatically.",
   "If an engine presents CAPTCHA, unusual-traffic, or bot-verification content, report the block; do not claim that no results exist.",
   "Use read_url to inspect promising result pages. Preserve the returned URLs as source references.",
+  "For user-facing search answers, use formatted_results as the primary readable output: each result has a clickable title/URL followed by its page description on the next line.",
+  "Do not expose internal attempts, parser diagnostics, debug fields, or raw JSON to the user unless they explicitly request diagnostics.",
 ];
 
 const MAX_TEXT = 18000;
@@ -381,7 +383,7 @@ export default {
       name: "search_web",
       label: "Web Search",
       description: "Search the public web using locally managed headless Chromium. Google is the default. Select Baidu or Sogou for Chinese-language sources, Naver for Korean, Yahoo Japan for Japanese, and Yandex for Russian. Returns structured titles, URLs, and snippets. No search API is used.",
-      promptSnippet: "search the public web through local headless Chromium",
+      promptSnippet: "search the public web through local headless Chromium and present each result as a link followed by its description",
       promptGuidelines: ENGINE_GUIDANCE,
       parameters: {
         type: "object",
