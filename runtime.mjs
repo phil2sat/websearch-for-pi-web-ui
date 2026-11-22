@@ -26,7 +26,7 @@ const ENGINES = {
 };
 
 const ENGINE_GUIDANCE = [
-  "Use Google by default for general web searches.",
+  "Use Bing by default for general web searches; automatically fall back to other configured search engines when no results are extracted.",
   "Choose Baidu or Sogou for Chinese-language websites and sources.",
   "Choose Naver for Korean sources, Yahoo Japan for Japanese sources, and Yandex for Russian sources.",
   "Honor an explicitly requested search engine. The engine parameter is optional and defaults to Google.",
@@ -632,7 +632,7 @@ export default {
         type: "object",
         properties: {
           query: { type: "string", description: "The search query." },
-          engine: { type: "string", enum: Object.keys(ENGINES), default: "google", description: "Search engine. Defaults to Google. Choose a regional engine when the requested sources or language call for it." },
+          engine: { type: "string", enum: Object.keys(ENGINES), default: "bing", description: "Search engine. Defaults to Bing and falls back to other engines when no results are extracted. Choose a regional engine when the requested sources or language call for it." },
           limit: { type: "integer", minimum: 1, maximum: 20, default: 10, description: "Maximum number of results." },
         },
         required: ["query"]
