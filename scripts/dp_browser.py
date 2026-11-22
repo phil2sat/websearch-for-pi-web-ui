@@ -2109,6 +2109,8 @@ def _search_locked(browser, args):
         if not results:
             empty_note = "该引擎确实没有结果" if res.get("declared_empty") else "版式变化，未解析到结果"
             attempt = {"engine": eng, "kind": "empty", "reason": empty_note}
+            if res.get("debug"):
+                attempt["debug"] = res["debug"]
             attempts.append(attempt)
             if not fallback_from and eng != candidate_engines[-1]:
                 fallback_from = eng
@@ -2182,6 +2184,7 @@ def _search_locked(browser, args):
             "ok": True,
             "cmd": CMD,
             "query": query,
+            "formatted_results": _format_no_results(query, attempts),
             "engine": None,
             "fallback_from": None,
             "time_range": time_range if time_range != "all" else None,
@@ -2194,6 +2197,18 @@ def _search_locked(browser, args):
             "attempts": attempts,
         }
     )
+
+
+def _format_no_results(query, attempts):
+    """Human-readable explanation when a search yields no parsable results."""
+    lines = [f"Keine auswertbaren Suchergebnisse für „{query}“."]
+    for a in attempts:
+        line = f"- {a.get('engine')}: {a.get('kind')} – {a.get('reason')}"
+        dbg = a.get("debug") or {}
+        if dbg.get("page_title"):
+            line += f" (Seitentitel: {dbg['page_title']})"
+        lines.append(line)
+    return "\n".join(lines)
 
 
 ARTICLE_EXTRACT_JS = r"""

@@ -407,11 +407,16 @@ export default {
           const env = { ...buildBrowserEnv(), DP_DEFAULT_ENGINE: engine };
           const args = ["search", query, "--engine", engine, "--no-fallback", "--limit", String(limit)];
           const response = await runPythonScript(py, args, { env, scriptPath: BROWSER_USE_SCRIPT_PATH });
-          if (!response?.ok) return response;
           recordActivity();
+          if (!response?.ok) {
+            return { ...response, formatted_results: `Suche fehlgeschlagen: ${response?.error ?? "unbekannter Fehler"}` };
+          }
+          if (!response.formatted_results) {
+            response.formatted_results = `Keine Ergebnisse für „${query}“ (${engine}).`;
+          }
           return response;
         } catch (error) {
-          return { ok: false, engine, query, error: String(error?.message ?? error), diagnostic: stderrTail.slice(-1000) };
+          return { ok: false, engine, query, formatted_results: `Suche fehlgeschlagen: ${String(error?.message ?? error)}`, error: String(error?.message ?? error), diagnostic: stderrTail.slice(-1000) };
         }
       }
     });
