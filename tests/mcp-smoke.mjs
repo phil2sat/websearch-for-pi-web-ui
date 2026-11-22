@@ -62,9 +62,15 @@ try {
 
   child.stdin.end();
   const exitCode = await new Promise((resolve, reject) => {
-    child.once("error", reject);
-    child.once("exit", resolve);
-    setTimeout(() => reject(new Error("MCP server did not shut down after stdin closed.")), 5000);
+    const timer = setTimeout(() => reject(new Error("MCP server did not shut down after stdin closed.")), 5000);
+    child.once("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.once("exit", (code) => {
+      clearTimeout(timer);
+      resolve(code);
+    });
   });
   assert.equal(exitCode, 0);
   process.stdout.write("MCP stdio smoke test passed.\n");
