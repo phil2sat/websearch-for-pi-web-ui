@@ -1546,7 +1546,7 @@ def _build_search_url(query: str, engine: str, time_range: str = "all", page: in
             url += f"&b={(p - 1) * 10 + 1}"
         return url
     elif eng == "google":
-        url = f"https://www.google.com/search?q={q}&hl=zh-CN"
+        url = f"https://www.google.com/search?q={q}&hl=de-DE"
         if tr in ("day", "week", "month", "year"):
             qdr = {"day": "d", "week": "w", "month": "m", "year": "y"}.get(tr, "d")
             url += f"&tbs=qdr:{qdr}"
