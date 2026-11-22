@@ -1581,7 +1581,12 @@ try {
     results: finalResults
   });
 } catch (e) {
-  return JSON.stringify({ error: String(e) });
+  return JSON.stringify({
+    error: String(e),
+    stack: e && e.stack ? String(e.stack).slice(0, 2400) : null,
+    page_url: location.href,
+    page_title: document.title || ''
+  });
 }
 """
 
@@ -2068,7 +2073,14 @@ def _search_locked(browser, args):
         if res.get("blocked") or res.get("error"):
             reason = res.get("error") or "页面被拦截或验证码"
             kind = res.get("kind") or "blocked"
-            attempts.append({"engine": eng, "kind": kind, "reason": str(reason)})
+            attempt = {"engine": eng, "kind": kind, "reason": str(reason)}
+            if res.get("stack"):
+                attempt["stack"] = res["stack"]
+            if res.get("page_url"):
+                attempt["page_url"] = res["page_url"]
+            if res.get("page_title"):
+                attempt["page_title"] = res["page_title"]
+            attempts.append(attempt)
             if kind == "network":
                 _mark_engine_unreachable(health, eng)
             else:
