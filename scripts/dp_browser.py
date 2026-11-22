@@ -1014,6 +1014,9 @@ def cmd_console(browser, args):
         elif a == "--clear":
             clear = True
             i += 1
+        elif a == "--output" and i + 1 < len(args):
+            output_mode = args[i + 1].strip().lower()
+            i += 2
         elif a == "--limit" and i + 1 < len(args):
             try:
                 limit = int(args[i + 1])
@@ -2200,6 +2203,8 @@ def _search_locked(browser, args):
     time_range = "all"
     fetch_top = False
     fast_search = os.environ.get("DP_FAST_SEARCH", "1").strip().lower() not in ("0", "false", "no", "off")
+    debug_env = os.environ.get("DP_SEARCH_DEBUG", "0").strip().lower() in ("1", "true", "yes", "on")
+    output_mode = "json" if debug_env else "text"
 
     i = 0
     query_parts = []
@@ -2235,6 +2240,9 @@ def _search_locked(browser, args):
         else:
             query_parts.append(a)
             i += 1
+
+    if output_mode not in ("text", "json"):
+        fail(f"Unsupported search output mode: {output_mode}")
 
     query = " ".join(query_parts).strip()
     if not query:
@@ -2394,7 +2402,7 @@ def _search_locked(browser, args):
                         except Exception:
                             pass
 
-        if os.environ.get("DP_SEARCH_DEBUG", "0").strip().lower() in ("1", "true", "yes", "on"):
+        if output_mode == "json":
             out({
                 "ok": True,
                 "cmd": CMD,
@@ -2417,7 +2425,7 @@ def _search_locked(browser, args):
         sys.stdout.write(formatted_results + "\n")
         sys.exit(0)
 
-    if os.environ.get("DP_SEARCH_DEBUG", "0").strip().lower() in ("1", "true", "yes", "on"):
+    if output_mode == "json":
         out({
             "ok": False,
             "cmd": CMD,
