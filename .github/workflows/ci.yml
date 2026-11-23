@@ -19,5 +19,7 @@ jobs:
           node --check runtime.mjs
           node --check mcp-server.mjs
           node --check tests/mcp-smoke.mjs
+      - name: Test search locale URL generation
+        run: python -m unittest discover -s tests -p "test_*.py"
       - name: Test MCP stdio lifecycle
         run: node tests/mcp-smoke.mjs

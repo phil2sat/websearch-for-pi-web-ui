@@ -1700,15 +1700,30 @@ try {
 """
 
 
-def _build_search_url(query: str, engine: str, time_range: str = "all", page: int = 1) -> str:
+def _build_search_url(
+    query: str,
+    engine: str,
+    time_range: str = "all",
+    page: int = 1,
+    language: str = "de",
+    region: str = "DE",
+) -> str:
     import urllib.parse
+
+    language = (language or "de").strip().lower()
+    region = (region or "DE").strip().upper()
+    if not re.fullmatch(r"[a-z]{2}", language):
+        raise ValueError("language must be a two-letter ISO 639-1 code")
+    if not re.fullmatch(r"[A-Z]{2}", region):
+        raise ValueError("region must be a two-letter ISO 3166-1 alpha-2 code")
+
     q = urllib.parse.quote_plus(query.strip())
     eng = engine.lower()
     tr = (time_range or "all").lower().strip()
     p = max(1, int(page or 1))
 
     if eng in ("bing", "auto"):
-        url = f"https://www.bing.com/search?q={q}"
+        url = f"https://www.bing.com/search?q={q}&setlang={language}&cc={region}"
         if tr == "day":
             url += '&filters=ex1:"ez1"'
         elif tr == "week":
@@ -1745,7 +1760,7 @@ def _build_search_url(query: str, engine: str, time_range: str = "all", page: in
             url += f"&pn={p}"
         return url
     elif eng == "duckduckgo":
-        url = f"https://html.duckduckgo.com/html/?q={q}"
+        url = f"https://html.duckduckgo.com/html/?q={q}&kl={region.lower()}-{language}"
         if tr in ("day", "week", "month", "year"):
             df = {"day": "d", "week": "w", "month": "m", "year": "y"}.get(tr, "d")
             url += f"&df={df}"
@@ -1763,7 +1778,7 @@ def _build_search_url(query: str, engine: str, time_range: str = "all", page: in
             url += f"&b={(p - 1) * 10 + 1}"
         return url
     elif eng == "google":
-        url = f"https://www.google.de/search?q={q}&hl=de-DE"
+        url = f"https://www.google.com/search?q={q}&hl={language}&gl={region}"
         if tr in ("day", "week", "month", "year"):
             qdr = {"day": "d", "week": "w", "month": "m", "year": "y"}.get(tr, "d")
             url += f"&tbs=qdr:{qdr}"
@@ -1786,8 +1801,22 @@ def _execute_search_on_tab(
     time_range: str = "all",
     page: int = 1,
     fast_search: bool = True,
+    language: str = "de",
+    region: str = "DE",
 ):
-    url = _build_search_url(query, engine, time_range=time_range, page=page)
+    url = _build_search_url(
+        query,
+        engine,
+        time_range=time_range,
+        page=page,
+        language=language,
+        region=region,
+    )
+    accept_language = f"{language}-{region},{language};q=0.9,en;q=0.7"
+    try:
+        tab.run_cdp("Network.setExtraHTTPHeaders", headers={"Accept-Language": accept_language})
+    except Exception:
+        pass
     try:
         tab.get(url, timeout=6.0)
     except Exception as nav_err:
@@ -2205,6 +2234,8 @@ def _search_locked(browser, args):
     time_range = "all"
     fetch_top = False
     fast_search = os.environ.get("DP_FAST_SEARCH", "1").strip().lower() not in ("0", "false", "no", "off")
+    language = os.environ.get("DP_SEARCH_LANGUAGE", "de").strip().lower() or "de"
+    region = os.environ.get("DP_SEARCH_REGION", "DE").strip().upper() or "DE"
     debug_env = os.environ.get("DP_SEARCH_DEBUG", "0").strip().lower() in ("1", "true", "yes", "on")
     output_mode = "json" if debug_env else "text"
 
@@ -2214,6 +2245,12 @@ def _search_locked(browser, args):
         a = args[i]
         if a == "--engine" and i + 1 < len(args):
             engine = args[i + 1].lower()
+            i += 2
+        elif a == "--language" and i + 1 < len(args):
+            language = args[i + 1].strip().lower()
+            i += 2
+        elif a == "--region" and i + 1 < len(args):
+            region = args[i + 1].strip().upper()
             i += 2
         elif a in ("--time-range", "-t", "--timerange") and i + 1 < len(args):
             time_range = args[i + 1].lower()
@@ -2248,6 +2285,10 @@ def _search_locked(browser, args):
 
     if output_mode not in ("text", "json"):
         fail(f"Unsupported search output mode: {output_mode}")
+    if not re.fullmatch(r"[a-z]{2}", language):
+        fail("language must be a two-letter ISO 639-1 code")
+    if not re.fullmatch(r"[A-Z]{2}", region):
+        fail("region must be a two-letter ISO 3166-1 alpha-2 code")
 
     query = " ".join(query_parts).strip()
     if not query:
@@ -2314,6 +2355,8 @@ def _search_locked(browser, args):
                 time_range=time_range,
                 page=page,
                 fast_search=fast_search,
+                language=language,
+                region=region,
             )
         except Exception as e:
             attempts.append({"engine": eng, "kind": "error", "reason": f"{type(e).__name__}: {e}"})
@@ -2785,7 +2828,7 @@ HELP = """browser-use — 常驻 Chrome 浏览器控制后端
 用法: python dp_browser.py <命令> [参数]   (输出 JSON; 失败 exit code 1)
 
 搜索 / 检索 / 正文阅读
-  search <query> [--engine <bing|google|baidu|duckduckgo>] [--limit <N>] [--no-fallback]
+  search <query> [--engine <name>] [--language <ISO-639-1>] [--region <ISO-3166-1>] [--limit <N>] [--no-fallback]
                         通过真实浏览器进行网页搜索，直接提取干净结构化自然结果并过滤广告
   read_page [url] [max_chars]
                         阅读器模式提取网页纯正文与核心代码块，过滤所有噪音与广告(极省 Token)

@@ -19,7 +19,7 @@ const ENGINES = { google: true, bing: true, duckduckgo: true, baidu: true, sogou
 const ENGINE_GUIDANCE = [
   "Use Google by default for web searches. Only use another search engine when the engine parameter explicitly selects it.",
   "Choose Baidu or Sogou for Chinese-language websites and sources.",
-  "Choose Naver for Korean sources, Yahoo Japan for Japanese sources, and Yandex for Russian sources.",
+  "When a user specifies a country or regional version (for example, Google Japan), keep the requested engine and pass matching language and region parameters to search_web. Use ISO 639-1 language codes and ISO 3166-1 alpha-2 region codes. Google Japan is language=ja and region=JP. Defaults are language=de and region=DE.",
   "Honor the explicitly requested search engine. The engine parameter is optional and defaults to Google; never switch engines automatically.",
   "If an engine presents CAPTCHA, unusual-traffic, or bot-verification content, report the block; do not claim that no results exist.",
   "Use read_url to inspect promising result pages. Preserve the returned URLs as source references.",
@@ -432,14 +432,16 @@ export default {
     const offSearch = host.registerAgentTool({
       name: "search_web",
       label: "Web Search",
-      description: "Search the public web using locally managed headless Chromium. Google is the default. Select Baidu or Sogou for Chinese-language sources, Naver for Korean, Yahoo Japan for Japanese, and Yandex for Russian. Debug output OFF selects the independent plain-text generator from version 0.1.35. Debug output ON selects the independent JSON generator from version 0.1.29. Both generator outputs are returned unchanged. No search API is used.",
-      promptSnippet: "Search the public web through local headless Chromium. Follow the plugin Debug output setting exactly: OFF selects the version 0.1.35 plain-text generator; ON selects the version 0.1.29 JSON generator. Return the selected generator output unchanged. Never convert one output mode into the other.",
+      description: "Search the public web using locally managed headless Chromium. Google is the default. Select the engine explicitly when requested. Set language and region for localized results (for example, Google Japan: language=ja, region=JP). Defaults are German (de/DE). Debug output OFF selects the independent plain-text generator from version 0.1.35. Debug output ON selects the independent JSON generator from version 0.1.29. Both outputs are returned unchanged. No search API is used.",
+      promptSnippet: "Search the public web through local headless Chromium. For regional requests such as Google Japan, call search_web with engine=google, language=ja, region=JP. Convert country/language requests to ISO 639-1 language and ISO 3166-1 alpha-2 region codes. Defaults are language=de and region=DE. Follow the plugin Debug output setting exactly: OFF selects the version 0.1.35 plain-text generator; ON selects the version 0.1.29 JSON generator. Return the selected generator output unchanged. Never convert one output mode into the other.",
       promptGuidelines: ENGINE_GUIDANCE,
       parameters: {
         type: "object",
         properties: {
           query: { type: "string", description: "The search query." },
           engine: { type: "string", enum: Object.keys(ENGINES), default: "google", description: "Search engine. Defaults to Google. Other engines are used only when explicitly selected." },
+          language: { type: "string", pattern: "^[A-Za-z]{2}$", default: "de", description: "ISO 639-1 two-letter search language code. Defaults to de (German)." },
+          region: { type: "string", pattern: "^[A-Za-z]{2}$", default: "DE", description: "ISO 3166-1 alpha-2 region code. Defaults to DE (Germany)." },
           limit: { type: "integer", minimum: 1, maximum: 20, default: 10, description: "Maximum number of results." },
         },
         required: ["query"]
@@ -449,6 +451,10 @@ export default {
         if (!query) return "Suche fehlgeschlagen: query is required";
         const engine = String(params.engine ?? "google").toLowerCase();
         if (!ENGINES[engine]) return `Suche fehlgeschlagen: Unsupported engine: ${engine}`;
+        const language = String(params.language ?? "de").trim().toLowerCase();
+        const region = String(params.region ?? "DE").trim().toUpperCase();
+        if (!/^[a-z]{2}$/.test(language)) return "Suche fehlgeschlagen: language must be a two-letter ISO 639-1 code";
+        if (!/^[A-Z]{2}$/.test(region)) return "Suche fehlgeschlagen: region must be a two-letter ISO 3166-1 alpha-2 code";
         const limit = Math.min(20, Math.max(1, Number(params.limit) || 10));
         try {
           if (signal?.aborted) throw new Error("Search cancelled.");
@@ -469,7 +475,7 @@ export default {
           await startBrowser();
           const py = resolvePython();
           const env = { ...buildBrowserEnv(), DP_DEFAULT_ENGINE: engine };
-          const args = ["search", query, "--engine", engine, "--no-fallback", "--limit", String(limit), "--output", outputMode];
+          const args = ["search", query, "--engine", engine, "--language", language, "--region", region, "--no-fallback", "--limit", String(limit), "--output", outputMode];
           const generatedOutput = await runPythonScript(py, args, {
             env,
             timeout: 150000,

@@ -36,7 +36,13 @@ Both generators are separate output branches in `scripts/dp_browser.py`. The `--
 Parameters:
 - `query` (required)
 - `engine` (optional): `google` (default), `bing`, `duckduckgo`, `baidu`, `sogou`, `so`, `brave`, `yahoo`
+- `language` (optional): ISO 639-1 two-letter language code; default `de`.
+- `region` (optional): ISO 3166-1 alpha-2 country/region code; default `DE`.
 - `limit` (optional, 1–20; default 10)
+
+Regional search example: `search_web(query="...", engine="google", language="ja", region="JP")` searches Google with Japanese language and Japan region preferences. The corresponding BCP 47 locale is `ja-JP`; the tool accepts the separate language and region codes.
+
+Google receives `hl` and `gl`, Bing receives `setlang` and `cc`, and DuckDuckGo receives its `kl` locale parameter. Other engines receive the browser `Accept-Language` header where supported; unsupported engine-specific region parameters are not fabricated. Omitting both parameters preserves the German defaults.
 
 ### `read_url`
 
