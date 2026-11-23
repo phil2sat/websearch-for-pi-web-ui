@@ -2444,18 +2444,8 @@ def _search_locked(browser, args):
             )
 
         # Preserve the independent 0.1.35 plain-text generator.
-        def _site_label(item):
-            site = (item.get("site") or "").strip()
-            if site:
-                return re.sub(r"^www\.", "", site)
-            try:
-                host = urllib.parse.urlparse(item.get("url") or "").hostname or ""
-            except Exception:
-                host = ""
-            return "" if re.search(r"(^|\.)google\.", host) else re.sub(r"^www\.", "", host)
-
         formatted_results = "\n\n".join(
-            f"{index}. {item.get('title') or 'Untitled'}{(' — ' + _site_label(item)) if _site_label(item) else ''}\n"
+            f"{index}. {item.get('title') or 'Untitled'}\n"
             f"{item.get('url')}\n\n"
             f"{item.get('snippet') or 'Keine Beschreibung verfügbar.'}"
             for index, item in enumerate(results, 1)

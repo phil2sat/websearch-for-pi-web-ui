@@ -522,6 +522,10 @@ export default {
           const title = response.title ?? "";
           const finalUrl = response.url ?? url;
           const text = clip(response.content ?? "", maxChars);
+          const looksLikeError = /(^|\b)(404|not found|nicht gefunden|seite existiert nicht)\b/i.test(title) && String(response.content ?? "").length < 600;
+          if (looksLikeError) {
+            return toolResult(`FEHLER: Diese Seite existiert nicht (404). Die URL wurde vermutlich erfunden. Rufe read_url nur mit einer URL aus den search_web-Ergebnissen auf (die google.*/goto-Links unverändert kopieren). Nimm einen anderen Treffer.\n\n${title}\n${finalUrl}`);
+          }
           return toolResult(`${title}\n${finalUrl}\n\n${text}`, { ok: true, title, url: finalUrl });
         } catch (error) {
           return toolResult(`Seite konnte nicht gelesen werden: ${String(error?.message ?? error)}`, { ok: false });
