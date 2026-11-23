@@ -29,7 +29,7 @@ class SearchLocaleTests(unittest.TestCase):
 
     def test_duckduckgo_japan(self):
         params = self.params(dp_browser._build_search_url("日本語検索", "duckduckgo", language="ja", region="JP"))
-        self.assertEqual(params["kl"], ["jp-ja"])
+        self.assertEqual(params["kl"], ["jp-jp"])
 
     def test_invalid_language_is_rejected(self):
         with self.assertRaises(ValueError):

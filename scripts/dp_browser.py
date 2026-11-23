@@ -1760,7 +1760,9 @@ def _build_search_url(
             url += f"&pn={p}"
         return url
     elif eng == "duckduckgo":
-        url = f"https://html.duckduckgo.com/html/?q={q}&kl={region.lower()}-{language}"
+        # DuckDuckGo uses its own locale identifiers (for example, jp-jp).
+        ddg_language = {"ja": "jp"}.get(language, language)
+        url = f"https://html.duckduckgo.com/html/?q={q}&kl={region.lower()}-{ddg_language}"
         if tr in ("day", "week", "month", "year"):
             df = {"day": "d", "week": "w", "month": "m", "year": "y"}.get(tr, "d")
             url += f"&df={df}"
